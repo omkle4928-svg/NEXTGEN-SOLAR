@@ -1,0 +1,6 @@
+{
+  "name": "Solar Installation Portal",
+  "description": "Portal for solar installation agents to upload consumer details and photos, and for admins to review, approve, and manage consumer leads.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

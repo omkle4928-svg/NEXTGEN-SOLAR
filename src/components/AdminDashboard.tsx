@@ -1,0 +1,1370 @@
+import React, { useState, useEffect } from 'react';
+import { User, Consumer } from '../types';
+import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { hashPassword } from '../utils/crypto';
+import ConsumerDetailModal from './ConsumerDetailModal';
+import { 
+  Search, 
+  Filter, 
+  LogOut, 
+  Sun, 
+  CheckCircle, 
+  Clock, 
+  XCircle, 
+  TrendingUp,
+  Award,
+  Users,
+  DollarSign,
+  MapPin,
+  Calendar,
+  Layers,
+  Zap,
+  Download,
+  RefreshCw,
+  Inbox,
+  Lock,
+  UserCheck,
+  ChevronLeft,
+  AlertCircle
+} from 'lucide-react';
+import { motion } from 'motion/react';
+
+interface AdminDashboardProps {
+  user: User;
+  onLogout: () => void;
+}
+
+export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
+  const [consumers, setConsumers] = useState<Consumer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [agentFilter, setAgentFilter] = useState<string>('All');
+  const [selectedConsumer, setSelectedConsumer] = useState<Consumer | null>(null);
+  const [actionSuccess, setActionSuccess] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // New features state
+  const [activeTab, setActiveTab] = useState<'leads' | 'agents'>('leads');
+  const [agents, setAgents] = useState<any[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(false);
+  const [selectedAgentForSubmissions, setSelectedAgentForSubmissions] = useState<any | null>(null);
+  const [agentLeadsSearch, setAgentLeadsSearch] = useState('');
+  const [agentLeadsStatus, setAgentLeadsStatus] = useState('All');
+
+  // Change Admin's Own Password states
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Change Agent's Password states (admin-operated)
+  const [selectedAgentToReset, setSelectedAgentToReset] = useState<any | null>(null);
+  const [agentNewPassword, setAgentNewPassword] = useState('');
+  const [agentConfirmPassword, setAgentConfirmPassword] = useState('');
+  const [agentPasswordError, setAgentPasswordError] = useState('');
+  const [agentPasswordSuccess, setAgentPasswordSuccess] = useState('');
+  const [agentPasswordLoading, setAgentPasswordLoading] = useState(false);
+
+  // Fetch all agents
+  const fetchAgents = async () => {
+    setAgentsLoading(true);
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('role', '==', 'agent'));
+      const querySnapshot = await getDocs(q);
+      const list: any[] = [];
+      querySnapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      // Sort agents by creation date or name
+      list.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+      setAgents(list);
+    } catch (err) {
+      console.error('Error fetching agents:', err);
+    } finally {
+      setAgentsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'agents') {
+      fetchAgents();
+    }
+  }, [activeTab]);
+
+  const handleChangeOwnPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setPasswordError('All fields are required.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New password and confirm password do not match.');
+      return;
+    }
+
+    setPasswordLoading(true);
+
+    try {
+      // Fetch currently saved admin settings
+      let adminPassword = 'IF_tL8a!t@U$tWa';
+      const adminDocRef = doc(db, 'admin_settings', 'profile');
+      const adminDocSnap = await getDoc(adminDocRef);
+      if (adminDocSnap.exists()) {
+        adminPassword = adminDocSnap.data().password || 'IF_tL8a!t@U$tWa';
+      }
+
+      // Check if stored password is a hash (64-character hex string)
+      const isStoredHash = /^[0-9a-f]{64}$/i.test(adminPassword);
+      const hashedOldPassword = await hashPassword(oldPassword);
+      const isMatch = isStoredHash 
+        ? hashedOldPassword === adminPassword 
+        : oldPassword === adminPassword;
+
+      if (!isMatch) {
+        setPasswordError('Incorrect old password.');
+        setPasswordLoading(false);
+        return;
+      }
+
+      const hashedNewPassword = await hashPassword(newPassword);
+
+      // Update password in Firestore as a hash
+      await setDoc(adminDocRef, {
+        password: hashedNewPassword,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      setPasswordSuccess('Password updated successfully!');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      
+      setTimeout(() => {
+        setIsPasswordModalOpen(false);
+        setPasswordSuccess('');
+      }, 2000);
+
+    } catch (err) {
+      console.error('Error changing admin password:', err);
+      setPasswordError('Failed to update password. Please check network and try again.');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const handleChangeAgentPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAgentPasswordError('');
+    setAgentPasswordSuccess('');
+
+    if (!agentNewPassword || !agentConfirmPassword) {
+      setAgentPasswordError('All fields are required.');
+      return;
+    }
+
+    if (agentNewPassword.length < 6) {
+      setAgentPasswordError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (agentNewPassword !== agentConfirmPassword) {
+      setAgentPasswordError('Passwords do not match.');
+      return;
+    }
+
+    setAgentPasswordLoading(true);
+
+    try {
+      const hashedPassword = await hashPassword(agentNewPassword);
+      const agentDocRef = doc(db, 'users', selectedAgentToReset.id);
+      await updateDoc(agentDocRef, {
+        password: hashedPassword
+      });
+
+      setAgentPasswordSuccess(`Successfully updated password for ${selectedAgentToReset.name}!`);
+      setAgentNewPassword('');
+      setAgentConfirmPassword('');
+      
+      // Refresh the agents list so the UI has latest values (not strictly necessary but good practice)
+      fetchAgents();
+
+      setTimeout(() => {
+        setSelectedAgentToReset(null);
+        setAgentPasswordSuccess('');
+      }, 2000);
+
+    } catch (err) {
+      console.error('Error changing agent password:', err);
+      setAgentPasswordError('Failed to change agent password. Please check connection.');
+    } finally {
+      setAgentPasswordLoading(false);
+    }
+  };
+
+  const handleToggleVerification = async (agent: any) => {
+    try {
+      const agentDocRef = doc(db, 'users', agent.id);
+      const newStatus = !(agent.isVerified ?? true);
+      await updateDoc(agentDocRef, {
+        isVerified: newStatus
+      });
+
+      setActionSuccess(`Agent "${agent.name}" status updated to: ${newStatus ? 'Verified & Active' : 'Suspended'}`);
+      
+      // Update local state
+      setAgents((prev) =>
+        prev.map((a) => (a.id === agent.id ? { ...a, isVerified: newStatus } : a))
+      );
+
+      setTimeout(() => {
+        setActionSuccess('');
+      }, 4000);
+
+    } catch (err) {
+      console.error('Error toggling agent verification:', err);
+    }
+  };
+
+  const fetchAllConsumers = async () => {
+    setIsRefreshing(true);
+    try {
+      const consumersRef = collection(db, 'consumers');
+      const querySnapshot = await getDocs(consumersRef);
+      
+      const list: Consumer[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        list.push({
+          id: doc.id,
+          ...data
+        } as Consumer);
+      });
+
+      // Sort client-side by creation timestamp (newest first)
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      setConsumers(list);
+    } catch (err) {
+      console.error('Error fetching consumers:', err);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllConsumers();
+  }, []);
+
+  const handleUpdateStatusAndRemark = async (consumerId: string, status: Consumer['status'], remark: string) => {
+    try {
+      const consumerDocRef = doc(db, 'consumers', consumerId);
+      await updateDoc(consumerDocRef, {
+        status: status,
+        remark: remark
+      });
+
+      // Update local state
+      setConsumers((prev) => 
+        prev.map((c) => c.id === consumerId ? { ...c, status, remark } : c)
+      );
+
+      // Also update selected consumer if open
+      if (selectedConsumer && selectedConsumer.id === consumerId) {
+        setSelectedConsumer((prev) => prev ? { ...prev, status, remark } : null);
+      }
+
+      setActionSuccess('Lead status updated successfully!');
+      setTimeout(() => setActionSuccess(''), 4000);
+    } catch (err) {
+      console.error('Error updating status:', err);
+      alert('Failed to update lead. Please try again.');
+    }
+  };
+
+  const getUniqueAgents = () => {
+    const agents = new Set<string>();
+    consumers.forEach(c => {
+      if (c.agentName) agents.add(c.agentName);
+    });
+    return Array.from(agents);
+  };
+
+  // Export to CSV Function
+  const exportToCSV = () => {
+    if (consumers.length === 0) return;
+
+    const headers = [
+      'Name', 'Consumer ID', 'Contact Number', 'Email', 'PAN Number', 'Aadhaar Number',
+      'CIBIL Score', 'Roof Type', 'Load Needed', 'Bank', 'Account No', 'IFSC', 
+      'Address', 'Landmark', 'District', 'PIN', 'Loan Amount', 'Status', 'Date', 
+      'Agent Name', 'Remark', 'Submission Date'
+    ];
+
+    const rows = consumers.map(c => [
+      `"${c.name.replace(/"/g, '""')}"`,
+      `"${c.consumerId}"`,
+      `"${c.contactNumber}"`,
+      `"${c.email}"`,
+      `"${c.panNumber}"`,
+      `"${c.aadhaarNumber}"`,
+      c.cibilScore,
+      c.roofType,
+      c.loadNeeded,
+      `"${c.bank}"`,
+      `"${c.accountNo || ''}"`,
+      `"${c.ifsc || ''}"`,
+      `"${c.address.replace(/"/g, '""')}"`,
+      `"${c.landmark.replace(/"/g, '""')}"`,
+      `"${c.district}"`,
+      `"${c.pin}"`,
+      c.loanAmount,
+      c.status,
+      c.date,
+      `"${c.agentName}"`,
+      `"${(c.remark || '').replace(/"/g, '""')}"`,
+      c.createdAt
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Solar_Leads_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Compute stats
+  const totalLeads = consumers.length;
+  const pendingLeads = consumers.filter(c => c.status === 'Pending').length;
+  const inProgressLeads = consumers.filter(c => 
+    c.status === 'In Progress' || 
+    c.status === 'Applied' || 
+    c.status === 'Transfer Pending' || 
+    c.status === 'Transfer Applied' || 
+    c.status === 'Quotation' || 
+    c.status === 'Loan' ||
+    c.status === 'Installed'
+  ).length;
+  const approvedLeads = consumers.filter(c => c.status === 'Approved' || c.status === 'Completed').length;
+  const rejectedLeads = consumers.filter(c => c.status === 'Rejected').length;
+  
+  const totalLoanApproved = consumers
+    .filter(c => c.status === 'Approved' || c.status === 'Completed' || c.status === 'Installed')
+    .reduce((sum, c) => sum + c.loanAmount, 0);
+
+  // Filter & Search Logic
+  const filteredConsumers = consumers.filter(c => {
+    const matchesSearch = 
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.consumerId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.district.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.bank.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.agentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.pin.includes(searchQuery);
+
+    const matchesStatus = statusFilter === 'All' || c.status === statusFilter;
+    const matchesAgent = agentFilter === 'All' || c.agentName === agentFilter;
+
+    return matchesSearch && matchesStatus && matchesAgent;
+  });
+
+  const getStatusBadge = (status: Consumer['status']) => {
+    switch (status) {
+      case 'Completed':
+      case 'Approved':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'Rejected':
+        return 'bg-rose-50 text-rose-700 border-rose-200';
+      case 'Applied':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'Transfer Pending':
+        return 'bg-cyan-50 text-cyan-700 border-cyan-200';
+      case 'Transfer Applied':
+        return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'Quotation':
+        return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'Loan':
+        return 'bg-sky-50 text-sky-700 border-sky-200';
+      case 'Installed':
+        return 'bg-teal-50 text-teal-700 border-teal-200';
+      case 'In Progress':
+        return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'Pending':
+      default:
+        return 'bg-amber-50 text-amber-700 border-amber-200';
+    }
+  };
+
+  // Quick calculations for the sidebar analytics
+  const getRoofTypePercentages = () => {
+    if (consumers.length === 0) return { RCC: 0, TIN: 0 };
+    const rccCount = consumers.filter(c => c.roofType === 'RCC').length;
+    return {
+      RCC: Math.round((rccCount / consumers.length) * 100),
+      TIN: Math.round(((consumers.length - rccCount) / consumers.length) * 100)
+    };
+  };
+
+  const getLoadBreakdown = () => {
+    const breakdown = { '3KV': 0, '5KV': 0, '10KV': 0, '20KV': 0 };
+    consumers.forEach(c => {
+      if (c.loadNeeded in breakdown) {
+        breakdown[c.loadNeeded]++;
+      }
+    });
+    return breakdown;
+  };
+
+  const roofPerc = getRoofTypePercentages();
+  const loadBreakdown = getLoadBreakdown();
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-hidden selection:bg-indigo-500 selection:text-white">
+      {/* Ambient background glows */}
+      <div className="absolute top-0 right-0 w-[50%] h-[50%] bg-indigo-500/5 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[40%] h-[40%] bg-amber-500/5 rounded-full blur-[120px] pointer-events-none" />
+
+      {/* Admin Nav */}
+      <header className="sticky top-0 z-40 bg-slate-900/80 border-b border-slate-800/80 backdrop-blur-md px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="p-2.5 bg-amber-500 text-slate-950 rounded-xl shadow-lg shadow-amber-500/20">
+            <Sun className="w-5 h-5 animate-spin" style={{ animationDuration: '30s' }} />
+          </div>
+          <div>
+            <h1 className="font-extrabold text-white tracking-tight text-base sm:text-lg">Solar Installation Portal</h1>
+            <p className="text-[10px] text-amber-500/90 font-bold uppercase tracking-wider font-mono">Administrator Console</p>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={fetchAllConsumers}
+            className={`p-2 bg-slate-900/50 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl transition-all ${isRefreshing ? 'animate-spin text-indigo-400 bg-indigo-950/50' : ''}`}
+            title="Refresh database"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <div className="hidden md:flex flex-col items-end">
+            <span className="text-xs font-bold text-slate-200">System Admin</span>
+            <span className="text-[10px] text-slate-400 font-mono font-semibold">{user.email}</span>
+          </div>
+          <button 
+            onClick={() => setIsPasswordModalOpen(true)}
+            className="flex items-center px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-900/50 hover:bg-slate-800 border border-slate-800 rounded-xl transition-all cursor-pointer"
+            title="Change password"
+          >
+            <Lock className="w-4 h-4 mr-1.5 text-slate-400" />
+            <span className="hidden sm:inline">Change Password</span>
+          </button>
+          <button 
+            onClick={onLogout}
+            className="flex items-center px-3 py-2 text-xs font-semibold text-rose-400 hover:text-rose-300 bg-rose-500/5 hover:bg-rose-500/15 border border-rose-500/20 rounded-xl transition-all"
+          >
+            <LogOut className="w-4 h-4 mr-1.5" />
+            <span className="hidden sm:inline">Sign Out</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 relative z-10">
+        {/* Welcome Section & Export Button */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-white tracking-tight">Lead Administration Centre</h2>
+            <p className="text-sm text-slate-400 mt-0.5">Manage vendor leads, verify consumer documentation and approve solar connections.</p>
+          </div>
+          <button
+            type="button"
+            onClick={exportToCSV}
+            disabled={consumers.length === 0}
+            className="inline-flex items-center justify-center px-4.5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-900 disabled:text-slate-600 border border-indigo-500/30 rounded-xl transition-all shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/45 cursor-pointer self-start sm:self-auto"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export Leads Report
+          </button>
+        </div>
+
+        {/* Global Action Banner */}
+        {actionSuccess && (
+          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl p-4 flex items-center space-x-2.5 shadow-sm">
+            <CheckCircle className="w-4.5 h-4.5 text-emerald-400 shrink-0" />
+            <span className="text-sm font-bold">{actionSuccess}</span>
+          </div>
+        )}
+
+        {/* Tab Selection Navigation */}
+        <div className="flex border-b border-slate-800 mb-6">
+          <button
+            onClick={() => setActiveTab('leads')}
+            className={`py-3 px-6 font-bold text-sm border-b-2 transition-all cursor-pointer flex items-center space-x-2 ${
+              activeTab === 'leads'
+                ? 'border-amber-500 text-amber-500 bg-amber-500/5'
+                : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900/40'
+            }`}
+          >
+            <Sun className="w-4 h-4" />
+            <span>Installation Leads</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('agents')}
+            className={`py-3 px-6 font-bold text-sm border-b-2 transition-all cursor-pointer flex items-center space-x-2 ${
+              activeTab === 'agents'
+                ? 'border-amber-500 text-amber-500 bg-amber-500/5'
+                : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900/40'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Agent Partners</span>
+          </button>
+        </div>
+
+        {activeTab === 'leads' ? (
+          <>
+            {/* Bento Stats Panel */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Stat 1 */}
+              <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-xl flex items-center space-x-4 backdrop-blur-sm">
+                <div className="p-3 bg-slate-950 text-slate-300 border border-slate-800 rounded-2xl shrink-0">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">Total Leads</span>
+                  <span className="text-2xl font-black text-white block mt-0.5">{totalLeads}</span>
+                </div>
+              </div>
+
+              {/* Stat 2 */}
+              <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-xl flex items-center space-x-4 backdrop-blur-sm">
+                <div className="p-3 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-2xl shrink-0">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">Pending Review</span>
+                  <span className="text-2xl font-black text-amber-400 block mt-0.5">{pendingLeads}</span>
+                </div>
+              </div>
+
+              {/* Stat 3 */}
+              <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-xl flex items-center space-x-4 backdrop-blur-sm">
+                <div className="p-3 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-2xl shrink-0">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">In Progress</span>
+                  <span className="text-2xl font-black text-indigo-400 block mt-0.5">{inProgressLeads}</span>
+                </div>
+              </div>
+
+              {/* Stat 4 */}
+              <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl shadow-xl flex items-center space-x-4 backdrop-blur-sm">
+                <div className="p-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-2xl shrink-0">
+                  <DollarSign className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">Approved Loans Vol</span>
+                  <span className="text-2xl font-black text-emerald-400 block mt-0.5">₹{totalLoanApproved.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Search, Filter & Workspace layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              {/* Left Column: Search & Submissions Table */}
+              <div className="lg:col-span-3 space-y-6">
+                <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl shadow-lg backdrop-blur-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-500 pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search consumer, ID, district, bank or agent..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-200 placeholder-slate-500"
+                      />
+                    </div>
+
+                    <div className="flex gap-3">
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-300"
+                      >
+                        <option value="All">All Statuses</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Applied">Applied</option>
+                        <option value="Transfer Pending">Transfer Pending</option>
+                        <option value="Transfer Applied">Transfer Applied</option>
+                        <option value="Quotation">Quotation</option>
+                        <option value="Loan">Loan</option>
+                        <option value="Installed">Installed</option>
+                        <option value="Completed">Completed</option>
+                      </select>
+
+                      <select
+                        value={agentFilter}
+                        onChange={(e) => setAgentFilter(e.target.value)}
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-300"
+                      >
+                        <option value="All">All Agents</option>
+                        {getUniqueAgents().map((agent) => (
+                          <option key={agent} value={agent}>{agent}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Leads Table Card */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl shadow-xl overflow-hidden backdrop-blur-sm">
+                  <div className="border-b border-slate-800 px-6 py-4 flex justify-between items-center bg-slate-900/80">
+                    <h3 className="font-bold text-slate-200 text-sm">Consumer Installation Submissions</h3>
+                    <span className="text-xs font-mono font-medium text-amber-500 bg-amber-500/5 px-2.5 py-1 rounded-lg border border-amber-500/10">Showing {filteredConsumers.length} entries</span>
+                  </div>
+
+                  {loading ? (
+                    <div className="p-16 text-center">
+                      <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <p className="text-slate-400 text-sm mt-4 font-semibold">Querying Leads Firestore Database...</p>
+                    </div>
+                  ) : filteredConsumers.length === 0 ? (
+                    <div className="p-16 text-center max-w-md mx-auto">
+                      <div className="p-4 bg-slate-900 border border-slate-800 inline-flex rounded-xl text-slate-500 mb-4">
+                        <Inbox className="w-7 h-7" />
+                      </div>
+                      <h3 className="text-md font-bold text-white">No matching leads</h3>
+                      <p className="text-xs text-slate-400 mt-1">Adjust search strings or parameters to find specific solar submissions.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-900/80 text-slate-400 text-[10px] uppercase font-bold tracking-wider border-b border-slate-800">
+                            <th className="px-6 py-3.5">Submission Date</th>
+                            <th className="px-6 py-3.5">Consumer</th>
+                            <th className="px-6 py-3.5">Agent Partner</th>
+                            <th className="px-6 py-3.5">Specifications</th>
+                            <th className="px-6 py-3.5 text-center">Verification Status</th>
+                            <th className="px-6 py-3.5 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/80 text-xs">
+                          {filteredConsumers.map((c) => (
+                            <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
+                              <td className="px-6 py-4 font-medium text-slate-400 whitespace-nowrap">
+                                <div className="flex items-center space-x-1">
+                                  <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>{c.date}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-white">{c.name}</span>
+                                  <span className="text-[10px] text-slate-500 font-mono mt-0.5">ID: {c.consumerId}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-slate-300 whitespace-nowrap">
+                                <div className="flex items-center space-x-1.5">
+                                  <div className="w-5.5 h-5.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full flex items-center justify-center font-bold text-[10px]">
+                                    {c.agentName.charAt(0)}
+                                  </div>
+                                  <span className="font-medium">{c.agentName}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-slate-400">
+                                <div className="flex flex-col space-y-0.5">
+                                  <span className="font-medium text-slate-200 flex items-center">
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 mr-1 shrink-0" />
+                                    {c.loadNeeded} Connection
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 truncate max-w-[140px]">{c.bank} • ₹{c.loanAmount.toLocaleString('en-IN')}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-center whitespace-nowrap">
+                                <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusBadge(c.status)}`}>
+                                  {c.status}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right whitespace-nowrap">
+                                <button
+                                  onClick={() => setSelectedConsumer(c)}
+                                  className="text-amber-400 font-bold hover:text-amber-300 hover:underline cursor-pointer"
+                                >
+                                  Verify & Action →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Key Portal Analytics Panel */}
+              <div className="space-y-6">
+                {/* Lead Roof Breakdown Card */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 backdrop-blur-sm">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center">
+                    <Layers className="w-4 h-4 mr-1.5 text-indigo-400" />
+                    Structural Roof Types
+                  </h4>
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-slate-400">
+                        <span className="font-semibold">RCC (Concrete Roof)</span>
+                        <span className="font-bold">{roofPerc.RCC}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                        <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${roofPerc.RCC}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-slate-400">
+                        <span className="font-semibold">TIN (Shade / Metal Sheet)</span>
+                        <span className="font-bold">{roofPerc.TIN}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                        <div className="bg-amber-500 h-full rounded-full" style={{ width: `${roofPerc.TIN}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Solar Load Needed Breakdown */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 backdrop-blur-sm">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center">
+                    <Zap className="w-4 h-4 mr-1.5 text-indigo-400" />
+                    Capacity Load Metrics
+                  </h4>
+                  <div className="space-y-3.5 text-xs">
+                    {Object.entries(loadBreakdown).map(([load, count]) => {
+                       const perc = totalLeads === 0 ? 0 : Math.round((count / totalLeads) * 100);
+                       return (
+                         <div key={load} className="flex items-center justify-between">
+                           <div className="flex items-center space-x-2">
+                             <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                             <span className="font-semibold text-slate-300">{load} Load</span>
+                           </div>
+                           <div className="flex items-center space-x-3">
+                             <span className="text-slate-500 font-medium">{count} leads</span>
+                             <span className="font-bold text-slate-200 min-w-[32px] text-right">{perc}%</span>
+                           </div>
+                         </div>
+                       );
+                    })}
+                  </div>
+                </div>
+
+                {/* Admin Instructions Helper */}
+                <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-2xl p-5 space-y-2 text-indigo-300 backdrop-blur-sm">
+                  <h4 className="text-xs font-bold uppercase tracking-wider flex items-center">
+                    <Award className="w-4 h-4 mr-1.5 text-indigo-400" />
+                    Verification Guide
+                  </h4>
+                  <p className="text-xs leading-normal text-indigo-200/85">
+                    Open full consumer details to inspect uploaded photo identity documents (PAN, Aadhaar) and site roof photographs. Use the admin panel in the modal to approve, request transfer reviews, or change progress milestones.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* Agent management panel */
+          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl shadow-xl p-6 space-y-6 backdrop-blur-sm">
+            {!selectedAgentForSubmissions && (
+              <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                <div>
+                  <h3 className="font-extrabold text-white text-lg">Agent Accounts Manager</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">View active agent partners, their credentials, and click to view their consumer submissions.</p>
+                </div>
+                <button
+                  onClick={fetchAgents}
+                  disabled={agentsLoading}
+                  className="p-2.5 hover:bg-slate-800 text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:text-indigo-300 rounded-xl transition-all cursor-pointer flex items-center text-xs font-bold"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-1.5 ${agentsLoading ? 'animate-spin' : ''}`} />
+                  Reload Agents
+                </button>
+              </div>
+            )}
+
+            {agentsLoading ? (
+              <div className="p-16 text-center">
+                <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-slate-400 text-sm mt-4 font-semibold">Fetching Agent Accounts from Firestore...</p>
+              </div>
+            ) : agents.length === 0 ? (
+              <div className="p-16 text-center max-w-md mx-auto">
+                <div className="p-4 bg-slate-950 border border-slate-800 inline-flex rounded-xl text-slate-500 mb-4">
+                  <Users className="w-7 h-7" />
+                </div>
+                <h3 className="text-md font-bold text-white">No agent partners registered yet</h3>
+                <p className="text-xs text-slate-400 mt-1">Agents will appear here once they complete registration on the portal login screen.</p>
+              </div>
+            ) : selectedAgentForSubmissions ? (
+              /* Submissions view for specific agent */
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => {
+                        setSelectedAgentForSubmissions(null);
+                        setAgentLeadsSearch('');
+                        setAgentLeadsStatus('All');
+                      }}
+                      className="p-2 hover:bg-slate-800 border border-slate-800 rounded-xl transition-all cursor-pointer text-slate-400 hover:text-white bg-slate-950"
+                      title="Back to agents list"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <div>
+                      <h3 className="font-extrabold text-white text-lg">
+                        Submissions by {selectedAgentForSubmissions.name}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Contact: {selectedAgentForSubmissions.contactNumber || 'No phone'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Status Indicator inside Back header */}
+                  <span className={`inline-flex self-start sm:self-auto px-3 py-1 rounded-full text-xs font-extrabold border ${
+                    selectedAgentForSubmissions.isVerified ?? true
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  }`}>
+                    {selectedAgentForSubmissions.isVerified ?? true ? 'Verified & Active' : 'Pending Verification'}
+                  </span>
+                </div>
+
+                {/* Submissions Stats cards */}
+                {(() => {
+                  const agentLeads = consumers.filter(c => c.agentId === selectedAgentForSubmissions.id);
+                  const total = agentLeads.length;
+                  const pending = agentLeads.filter(c => c.status === 'Pending').length;
+                  const progress = agentLeads.filter(c => c.status === 'In Progress').length;
+                  const approved = agentLeads.filter(c => c.status === 'Approved').length;
+                  const rejected = agentLeads.filter(c => c.status === 'Rejected').length;
+
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      <div className="bg-slate-950/60 border border-slate-800 p-4 rounded-2xl">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Submissions</span>
+                        <span className="text-xl font-black text-white block mt-1">{total}</span>
+                      </div>
+                      <div className="bg-amber-500/5 border border-amber-500/15 p-4 rounded-2xl">
+                        <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block flex items-center">
+                          <Clock className="w-3 h-3 mr-1 text-amber-400" /> Pending
+                        </span>
+                        <span className="text-xl font-black text-amber-400 block mt-1">{pending}</span>
+                      </div>
+                      <div className="bg-indigo-500/5 border border-indigo-500/15 p-4 rounded-2xl">
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block flex items-center">
+                          <TrendingUp className="w-3 h-3 mr-1 text-indigo-400" /> In Progress
+                        </span>
+                        <span className="text-xl font-black text-indigo-400 block mt-1">{progress}</span>
+                      </div>
+                      <div className="bg-emerald-500/5 border border-emerald-500/15 p-4 rounded-2xl">
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block flex items-center">
+                          <CheckCircle className="w-3 h-3 mr-1 text-emerald-500" /> Approved
+                        </span>
+                        <span className="text-xl font-black text-emerald-400 block mt-1">{approved}</span>
+                      </div>
+                      <div className="bg-rose-500/5 border border-rose-500/15 p-4 rounded-2xl col-span-2 md:col-span-1">
+                        <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block flex items-center">
+                          <XCircle className="w-3 h-3 mr-1 text-rose-400" /> Rejected
+                        </span>
+                        <span className="text-xl font-black text-rose-400 block mt-1">{rejected}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Filters for this specific agent's submissions */}
+                <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                  <div className="relative w-full sm:max-w-xs">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search consumer leads..."
+                      value={agentLeadsSearch}
+                      onChange={(e) => setAgentLeadsSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-200 placeholder-slate-500"
+                    />
+                  </div>
+                  <div className="flex items-center space-x-3 w-full sm:w-auto">
+                    <Filter className="w-4 h-4 text-slate-500 hidden sm:block" />
+                    <select
+                      value={agentLeadsStatus}
+                      onChange={(e) => setAgentLeadsStatus(e.target.value)}
+                      className="w-full sm:w-36 px-3 py-2 rounded-xl border border-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-300"
+                    >
+                      <option value="All">All Statuses</option>
+                      <option value="Pending">Pending</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Approved">Approved</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Submissions list */}
+                {(() => {
+                  const agentLeads = consumers.filter(c => c.agentId === selectedAgentForSubmissions.id);
+                  const filteredLeads = agentLeads.filter(c => {
+                    const matchesSearch = 
+                      c.name.toLowerCase().includes(agentLeadsSearch.toLowerCase()) ||
+                      c.consumerId.toLowerCase().includes(agentLeadsSearch.toLowerCase()) ||
+                      c.district.toLowerCase().includes(agentLeadsSearch.toLowerCase()) ||
+                      c.bank.toLowerCase().includes(agentLeadsSearch.toLowerCase());
+                    const matchesStatus = agentLeadsStatus === 'All' || c.status === agentLeadsStatus;
+                    return matchesSearch && matchesStatus;
+                  });
+
+                  if (filteredLeads.length === 0) {
+                    return (
+                      <div className="text-center py-12 border border-dashed border-slate-800 rounded-2xl bg-slate-900/10">
+                        <Inbox className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+                        <h4 className="font-bold text-slate-300 text-xs">No consumer leads found</h4>
+                        <p className="text-[11px] text-slate-500 mt-1">This agent hasn't submitted any matching leads.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredLeads.map((lead) => {
+                        const getStatusStyle = (status: Consumer['status']) => {
+                          switch (status) {
+                            case 'Approved': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                            case 'Rejected': return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+                            case 'In Progress': return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+                            default: return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                          }
+                        };
+
+                        return (
+                          <div 
+                            key={lead.id} 
+                            className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                          >
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border ${getStatusStyle(lead.status)}`}>
+                                    {lead.status}
+                                  </span>
+                                  <h4 className="font-extrabold text-slate-200 text-sm mt-1.5 truncate">{lead.name}</h4>
+                                  <p className="text-[10px] text-slate-505 font-mono">ID: {lead.consumerId}</p>
+                                </div>
+                                <div className="p-1.5 bg-slate-950 border border-slate-800 text-slate-300 font-mono text-[10px] font-black rounded-lg">
+                                  {lead.loadNeeded}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-[10px] pt-2.5 border-t border-slate-800/85">
+                                <div>
+                                  <span className="text-slate-500 block font-semibold">Bank Name</span>
+                                  <span className="text-slate-300 font-bold truncate block">{lead.bank}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500 block font-semibold">Loan Amount</span>
+                                  <span className="text-slate-300 font-extrabold block">₹{lead.loanAmount.toLocaleString('en-IN')}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500 block font-semibold">District</span>
+                                  <span className="text-slate-300 font-bold truncate block">{lead.district}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500 block font-semibold">CIBIL Score</span>
+                                  <span className={`font-extrabold block ${lead.cibilScore >= 750 ? 'text-emerald-400' : lead.cibilScore >= 650 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                    {lead.cibilScore}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-semibold">
+                              <span className="text-slate-500">{lead.date}</span>
+                              <button
+                                onClick={() => setSelectedConsumer(lead)}
+                                className="text-amber-400 hover:text-amber-300 font-bold flex items-center cursor-pointer"
+                              >
+                                Review & Update Status →
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              /* Agent Cards Grid */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {agents.map((agent) => {
+                  const agentLeads = consumers.filter(c => c.agentId === agent.id);
+                  const totalLeadsCount = agentLeads.length;
+                  const pendingLeadsCount = agentLeads.filter(c => c.status === 'Pending').length;
+
+                  return (
+                    <div
+                      key={agent.id}
+                      className="bg-slate-900/40 border border-slate-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        {/* Agent Card Header */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-indigo-500/10 text-indigo-300 rounded-2xl flex items-center justify-center font-black text-sm border border-indigo-500/20 shadow-sm shrink-0">
+                              {agent.name.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-extrabold text-slate-200 text-sm truncate">{agent.name}</h4>
+                              <p className="text-[10px] text-slate-500 font-semibold truncate">Phone: {agent.contactNumber || 'N/A'}</p>
+                            </div>
+                          </div>
+                          
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0 ${
+                            agent.isVerified ?? true
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          }`}>
+                            {agent.isVerified ?? true ? 'Verified & Active' : 'Pending Verification'}
+                          </span>
+                        </div>
+
+                        {/* Agent Information Fields */}
+                        <div className="space-y-2 text-[11px] bg-slate-950/40 p-3 rounded-2xl border border-slate-800/80">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-semibold">Mobile</span>
+                            <span className="text-slate-300 font-bold font-mono">{agent.contactNumber || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-semibold">Registered</span>
+                            <span className="text-slate-300 font-bold">
+                              {agent.createdAt ? new Date(agent.createdAt).toLocaleDateString() : 'N/A'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-semibold">Password</span>
+                            <span className="font-mono bg-slate-950 px-2 py-0.5 border border-slate-800 text-slate-300 rounded-md font-semibold select-all">
+                              {agent.password && /^[0-9a-f]{64}$/i.test(agent.password)
+                                ? '•••••••• (Hashed)'
+                                : agent.password}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Submission Counts Section */}
+                        <div className="pt-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400 font-bold">Total Submissions</span>
+                            <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-300 font-black rounded-lg text-[10px] border border-indigo-500/20">
+                              {totalLeadsCount} Leads
+                            </span>
+                          </div>
+                          {totalLeadsCount > 0 && (
+                            <p className="text-[10px] text-slate-500 mt-1 font-semibold flex items-center">
+                              <span className="w-2 h-2 rounded-full bg-amber-400 mr-1.5 inline-block animate-pulse"></span>
+                              {pendingLeadsCount} pending review
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Action Buttons */}
+                      <div className="pt-4 mt-4 border-t border-slate-800 flex flex-wrap gap-2 justify-between items-center">
+                        <button
+                          onClick={() => handleToggleVerification(agent)}
+                          className={`flex-1 min-w-[90px] text-center py-2 text-[10px] font-black rounded-xl transition-all shadow-sm cursor-pointer border ${
+                            agent.isVerified ?? true
+                              ? 'text-amber-400 hover:text-white hover:bg-amber-600 border-amber-500/20'
+                              : 'text-emerald-400 hover:text-white hover:bg-emerald-600 border-emerald-500/20'
+                          }`}
+                        >
+                          {agent.isVerified ?? true ? 'Suspend' : 'Activate'}
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setSelectedAgentToReset(agent);
+                            setAgentNewPassword('');
+                            setAgentConfirmPassword('');
+                            setAgentPasswordError('');
+                            setAgentPasswordSuccess('');
+                          }}
+                          className="px-3 py-2 text-[10px] font-bold text-indigo-400 hover:text-white hover:bg-indigo-600 border border-indigo-500/20 bg-slate-950 rounded-xl transition-all shadow-sm cursor-pointer"
+                          title="Reset password override"
+                        >
+                          Reset Pass
+                        </button>
+
+                        <button
+                          onClick={() => setSelectedAgentForSubmissions(agent)}
+                          className="flex-1 min-w-[90px] text-center py-2 text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all shadow-md shadow-indigo-950/25 cursor-pointer"
+                        >
+                          View Leads →
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Selected lead detail action overlay */}
+      {selectedConsumer && (
+        <ConsumerDetailModal
+          isOpen={!!selectedConsumer}
+          consumer={selectedConsumer}
+          userRole="admin"
+          onClose={() => setSelectedConsumer(null)}
+          onUpdateStatus={handleUpdateStatusAndRemark}
+        />
+      )}
+
+      {/* Change Password Modal (Self-Service) */}
+      {isPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl max-w-md w-full border border-slate-100 shadow-2xl overflow-hidden p-6 relative"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <h3 className="font-extrabold text-slate-900 text-lg">Change Admin Password</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsPasswordModalOpen(false);
+                  setPasswordError('');
+                  setPasswordSuccess('');
+                  setOldPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                className="p-1.5 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangeOwnPassword} className="space-y-4">
+              {passwordError && (
+                <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold p-3 rounded-xl">
+                  {passwordError}
+                </div>
+              )}
+              {passwordSuccess && (
+                <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-bold p-3 rounded-xl">
+                  {passwordSuccess}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="Enter current admin password"
+                  className="block w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Minimum 6 characters"
+                  className="block w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter new password"
+                  className="block w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasswordModalOpen(false);
+                    setPasswordError('');
+                    setPasswordSuccess('');
+                    setOldPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-50 border border-slate-100 hover:border-slate-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={passwordLoading}
+                  className="px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl transition-all cursor-pointer"
+                >
+                  {passwordLoading ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Change Agent Password Modal (Admin Override) */}
+      {selectedAgentToReset && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl max-w-md w-full border border-slate-100 shadow-2xl overflow-hidden p-6 relative"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-md sm:text-lg">Override Agent Password</h3>
+                  <p className="text-[11px] text-slate-500">Updating credentials for {selectedAgentToReset.name}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setSelectedAgentToReset(null);
+                  setAgentPasswordError('');
+                  setAgentPasswordSuccess('');
+                  setAgentNewPassword('');
+                  setAgentConfirmPassword('');
+                }}
+                className="p-1.5 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangeAgentPassword} className="space-y-4">
+              {agentPasswordError && (
+                <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold p-3 rounded-xl">
+                  {agentPasswordError}
+                </div>
+              )}
+              {agentPasswordSuccess && (
+                <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-bold p-3 rounded-xl">
+                  {agentPasswordSuccess}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={agentNewPassword}
+                  onChange={(e) => setAgentNewPassword(e.target.value)}
+                  placeholder="Enter direct override password"
+                  className="block w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={agentConfirmPassword}
+                  onChange={(e) => setAgentConfirmPassword(e.target.value)}
+                  placeholder="Re-enter override password"
+                  className="block w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAgentToReset(null);
+                    setAgentPasswordError('');
+                    setAgentPasswordSuccess('');
+                    setAgentNewPassword('');
+                    setAgentConfirmPassword('');
+                  }}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-50 border border-slate-100 hover:border-slate-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={agentPasswordLoading}
+                  className="px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl transition-all cursor-pointer"
+                >
+                  {agentPasswordLoading ? 'Applying Override...' : 'Set New Password'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+}
