@@ -7,6 +7,7 @@ export interface User {
   role: UserRole;
   contactNumber?: string;
   isVerified?: boolean;
+  agentIdCode?: string;
   createdAt: string;
 }
 

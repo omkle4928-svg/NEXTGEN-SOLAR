@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { User, Consumer } from '../types';
-import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { hashPassword } from '../utils/crypto';
 import ConsumerDetailModal from './ConsumerDetailModal';
+import ConsumerForm from './ConsumerForm';
 import { 
   Search, 
   Filter, 
@@ -26,7 +27,10 @@ import {
   Lock,
   UserCheck,
   ChevronLeft,
-  AlertCircle
+  AlertCircle,
+  Plus,
+  Trash2,
+  UserPlus
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -52,6 +56,27 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [selectedAgentForSubmissions, setSelectedAgentForSubmissions] = useState<any | null>(null);
   const [agentLeadsSearch, setAgentLeadsSearch] = useState('');
   const [agentLeadsStatus, setAgentLeadsStatus] = useState('All');
+
+  // Agent Creation state variables
+  const [isCreateAgentModalOpen, setIsCreateAgentModalOpen] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentContact, setNewAgentContact] = useState('');
+  const [newAgentPassword, setNewAgentPassword] = useState('');
+  const [createAgentSuccess, setCreateAgentSuccess] = useState('');
+  const [createAgentErr, setCreateAgentErr] = useState('');
+  const [createAgentLoading, setCreateAgentLoading] = useState(false);
+
+  // Fill Lead on Behalf state variables
+  const [onBehalfAgent, setOnBehalfAgent] = useState<any | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isSubmittingOnBehalf, setIsSubmittingOnBehalf] = useState(false);
+  const [formOnBehalfError, setFormOnBehalfError] = useState('');
+
+  // Agent Deletion state variables
+  const [agentToDelete, setAgentToDelete] = useState<any | null>(null);
+  const [adminPasswordForDelete, setAdminPasswordForDelete] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Change Admin's Own Password states
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -241,6 +266,177 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
     } catch (err) {
       console.error('Error toggling agent verification:', err);
+    }
+  };
+
+  const handleCreateAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateAgentErr('');
+    setCreateAgentSuccess('');
+
+    if (!newAgentName.trim() || !newAgentContact.trim() || !newAgentPassword.trim()) {
+      setCreateAgentErr('All fields are required.');
+      return;
+    }
+
+    const cleanPhone = newAgentContact.trim();
+    if (!/^\d{10}$/.test(cleanPhone)) {
+      setCreateAgentErr('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (newAgentPassword.length < 6) {
+      setCreateAgentErr('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setCreateAgentLoading(true);
+
+    try {
+      // Check if contactNumber already exists
+      const usersRef = collection(db, 'users');
+      const phoneQuery = query(usersRef, where('contactNumber', '==', cleanPhone));
+      const phoneSnap = await getDocs(phoneQuery);
+
+      if (!phoneSnap.empty) {
+        setCreateAgentErr('This mobile number is already registered.');
+        setCreateAgentLoading(false);
+        return;
+      }
+
+      // Generate unique random agent ID (AS-SA001 to AS-SA999)
+      const allAgentsQuery = query(usersRef, where('role', '==', 'agent'));
+      const allAgentsSnap = await getDocs(allAgentsQuery);
+      const existingCodes = new Set<string>();
+      allAgentsSnap.forEach((doc) => {
+        const data = doc.data();
+        if (data.agentIdCode) {
+          existingCodes.add(data.agentIdCode);
+        }
+      });
+
+      let num = Math.floor(Math.random() * 999) + 1;
+      let code = `AS-SA${String(num).padStart(3, '0')}`;
+      let attempts = 0;
+      while (existingCodes.has(code) && attempts < 1000) {
+        num = Math.floor(Math.random() * 999) + 1;
+        code = `AS-SA${String(num).padStart(3, '0')}`;
+        attempts++;
+      }
+
+      const hashedPassword = await hashPassword(newAgentPassword);
+
+      const newAgentData = {
+        name: newAgentName.trim(),
+        contactNumber: cleanPhone,
+        password: hashedPassword,
+        role: 'agent',
+        isVerified: true, // Created by admin, verify by default
+        agentIdCode: code,
+        createdAt: new Date().toISOString()
+      };
+
+      await addDoc(usersRef, newAgentData);
+
+      setCreateAgentSuccess(`Agent created successfully with ID: ${code}!`);
+      setNewAgentName('');
+      setNewAgentContact('');
+      setNewAgentPassword('');
+      fetchAgents();
+
+      setTimeout(() => {
+        setIsCreateAgentModalOpen(false);
+        setCreateAgentSuccess('');
+      }, 3000);
+
+    } catch (err) {
+      console.error('Error creating agent:', err);
+      setCreateAgentErr('Failed to create agent. Please try again.');
+    } finally {
+      setCreateAgentLoading(false);
+    }
+  };
+
+  const handleDeleteAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeleteError('');
+
+    if (!adminPasswordForDelete) {
+      setDeleteError('Password is required.');
+      return;
+    }
+
+    setDeleteLoading(true);
+
+    try {
+      // Validate admin password
+      let adminPassword = 'IF_tL8a!t@U$tWa';
+      const adminDocRef = doc(db, 'admin_settings', 'profile');
+      const adminDocSnap = await getDoc(adminDocRef);
+      if (adminDocSnap.exists()) {
+        adminPassword = adminDocSnap.data().password || 'IF_tL8a!t@U$tWa';
+      }
+
+      const isStoredHash = /^[0-9a-f]{64}$/i.test(adminPassword);
+      const hashedInput = await hashPassword(adminPasswordForDelete);
+      const isMatch = isStoredHash 
+        ? hashedInput === adminPassword 
+        : adminPasswordForDelete === adminPassword;
+
+      if (!isMatch) {
+        setDeleteError('Incorrect admin password.');
+        setDeleteLoading(false);
+        return;
+      }
+
+      // Proceed to delete
+      const agentDocRef = doc(db, 'users', agentToDelete.id);
+      await deleteDoc(agentDocRef);
+
+      setActionSuccess(`Agent ${agentToDelete.name} has been deleted successfully.`);
+      setAgentToDelete(null);
+      setAdminPasswordForDelete('');
+      fetchAgents();
+
+      setTimeout(() => {
+        setActionSuccess('');
+      }, 4000);
+
+    } catch (err) {
+      console.error('Error deleting agent:', err);
+      setDeleteError('Failed to delete agent. Please try again.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleOnBehalfFormSubmit = async (formData: Omit<Consumer, 'id' | 'agentId' | 'agentName' | 'createdAt'>) => {
+    if (!onBehalfAgent) return;
+    setIsSubmittingOnBehalf(true);
+    setFormOnBehalfError('');
+    try {
+      const consumersRef = collection(db, 'consumers');
+      const newConsumer = {
+        ...formData,
+        agentId: onBehalfAgent.id,
+        agentName: onBehalfAgent.name,
+        createdAt: new Date().toISOString()
+      };
+      await addDoc(consumersRef, newConsumer);
+
+      setActionSuccess(`Solar Lead submitted successfully on behalf of ${onBehalfAgent.name}!`);
+      setIsFormOpen(false);
+      setOnBehalfAgent(null);
+      
+      // Refresh consumer leads list
+      fetchAllConsumers();
+
+      setTimeout(() => setActionSuccess(''), 4000);
+    } catch (err) {
+      console.error('Error submitting on behalf:', err);
+      setFormOnBehalfError('Failed to submit solar lead. Please try again.');
+    } finally {
+      setIsSubmittingOnBehalf(false);
     }
   };
 
@@ -795,23 +991,80 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               </div>
             </div>
           </>
+        ) : isFormOpen && onBehalfAgent ? (
+          /* Submission on behalf form */
+          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl shadow-xl p-6 space-y-6 backdrop-blur-sm">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-indigo-400" />
+                  Submit Solar Lead on Behalf of
+                </h3>
+                <p className="text-sm mt-0.5">
+                  Agent: <span className="text-indigo-400 font-extrabold">{onBehalfAgent.name}</span> ({onBehalfAgent.agentIdCode || onBehalfAgent.id})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsFormOpen(false);
+                  setOnBehalfAgent(null);
+                  setFormOnBehalfError('');
+                }}
+                className="text-xs font-bold text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-750 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+              >
+                ← Cancel & Back
+              </button>
+            </div>
+
+            {formOnBehalfError && (
+              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold p-3.5 rounded-xl">
+                {formOnBehalfError}
+              </div>
+            )}
+
+            <ConsumerForm
+              onSubmit={handleOnBehalfFormSubmit}
+              onCancel={() => {
+                setIsFormOpen(false);
+                setOnBehalfAgent(null);
+                setFormOnBehalfError('');
+              }}
+              isSubmitting={isSubmittingOnBehalf}
+            />
+          </div>
         ) : (
           /* Agent management panel */
           <div className="bg-slate-900/60 border border-slate-800 rounded-3xl shadow-xl p-6 space-y-6 backdrop-blur-sm">
             {!selectedAgentForSubmissions && (
-              <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 gap-4">
                 <div>
                   <h3 className="font-extrabold text-white text-lg">Agent Accounts Manager</h3>
                   <p className="text-xs text-slate-400 mt-0.5">View active agent partners, their credentials, and click to view their consumer submissions.</p>
                 </div>
-                <button
-                  onClick={fetchAgents}
-                  disabled={agentsLoading}
-                  className="p-2.5 hover:bg-slate-800 text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:text-indigo-300 rounded-xl transition-all cursor-pointer flex items-center text-xs font-bold"
-                >
-                  <RefreshCw className={`w-4 h-4 mr-1.5 ${agentsLoading ? 'animate-spin' : ''}`} />
-                  Reload Agents
-                </button>
+                <div className="flex items-center space-x-2.5 shrink-0 self-start sm:self-auto">
+                  <button
+                    onClick={() => {
+                      setIsCreateAgentModalOpen(true);
+                      setNewAgentName('');
+                      setNewAgentContact('');
+                      setNewAgentPassword('');
+                      setCreateAgentErr('');
+                      setCreateAgentSuccess('');
+                    }}
+                    className="p-2.5 hover:bg-indigo-700 text-white bg-indigo-600 rounded-xl transition-all cursor-pointer flex items-center text-xs font-bold shadow-lg shadow-indigo-600/15"
+                  >
+                    <UserPlus className="w-4 h-4 mr-1.5" />
+                    Create New Agent
+                  </button>
+                  <button
+                    onClick={fetchAgents}
+                    disabled={agentsLoading}
+                    className="p-2.5 hover:bg-slate-800 text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:text-indigo-300 rounded-xl transition-all cursor-pointer flex items-center text-xs font-bold"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-1.5 ${agentsLoading ? 'animate-spin' : ''}`} />
+                    Reload Agents
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1048,7 +1301,14 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                               {agent.name.charAt(0)}
                             </div>
                             <div className="min-w-0">
-                              <h4 className="font-extrabold text-slate-200 text-sm truncate">{agent.name}</h4>
+                              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                <h4 className="font-extrabold text-slate-200 text-sm truncate">{agent.name}</h4>
+                                {agent.agentIdCode && (
+                                  <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 text-[9px] font-bold font-mono rounded-md border border-indigo-500/10">
+                                    {agent.agentIdCode}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-[10px] text-slate-500 font-semibold truncate">Phone: {agent.contactNumber || 'N/A'}</p>
                             </div>
                           </div>
@@ -1102,38 +1362,64 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       </div>
 
                       {/* Card Action Buttons */}
-                      <div className="pt-4 mt-4 border-t border-slate-800 flex flex-wrap gap-2 justify-between items-center">
-                        <button
-                          onClick={() => handleToggleVerification(agent)}
-                          className={`flex-1 min-w-[90px] text-center py-2 text-[10px] font-black rounded-xl transition-all shadow-sm cursor-pointer border ${
-                            agent.isVerified ?? true
-                              ? 'text-amber-400 hover:text-white hover:bg-amber-600 border-amber-500/20'
-                              : 'text-emerald-400 hover:text-white hover:bg-emerald-600 border-emerald-500/20'
-                          }`}
-                        >
-                          {agent.isVerified ?? true ? 'Suspend' : 'Activate'}
-                        </button>
-                        
-                        <button
-                          onClick={() => {
-                            setSelectedAgentToReset(agent);
-                            setAgentNewPassword('');
-                            setAgentConfirmPassword('');
-                            setAgentPasswordError('');
-                            setAgentPasswordSuccess('');
-                          }}
-                          className="px-3 py-2 text-[10px] font-bold text-indigo-400 hover:text-white hover:bg-indigo-600 border border-indigo-500/20 bg-slate-950 rounded-xl transition-all shadow-sm cursor-pointer"
-                          title="Reset password override"
-                        >
-                          Reset Pass
-                        </button>
+                      <div className="pt-4 mt-4 border-t border-slate-800 space-y-2.5">
+                        <div className="flex gap-2 w-full">
+                          <button
+                            onClick={() => {
+                              setOnBehalfAgent(agent);
+                              setIsFormOpen(true);
+                              setFormOnBehalfError('');
+                            }}
+                            className="flex-1 text-center py-2 text-[10px] font-black text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center space-x-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Fill on Behalf</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAgentToDelete(agent);
+                              setAdminPasswordForDelete('');
+                              setDeleteError('');
+                            }}
+                            className="px-3.5 py-2 text-[10px] font-bold text-rose-400 hover:text-white bg-rose-500/5 hover:bg-rose-950 hover:border-rose-800/50 border border-rose-500/10 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center"
+                            title="Delete Agent Partner"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex gap-2 w-full">
+                          <button
+                            onClick={() => handleToggleVerification(agent)}
+                            className={`flex-1 text-center py-2 text-[10px] font-black rounded-xl transition-all shadow-sm cursor-pointer border ${
+                              agent.isVerified ?? true
+                                ? 'text-amber-400 hover:text-white hover:bg-amber-600 border-amber-500/20 bg-slate-950/20'
+                                : 'text-emerald-400 hover:text-white hover:bg-emerald-600 border-emerald-500/20 bg-slate-950/20'
+                            }`}
+                          >
+                            {agent.isVerified ?? true ? 'Suspend' : 'Activate'}
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setSelectedAgentToReset(agent);
+                              setAgentNewPassword('');
+                              setAgentConfirmPassword('');
+                              setAgentPasswordError('');
+                              setAgentPasswordSuccess('');
+                            }}
+                            className="px-2.5 py-2 text-[10px] font-bold text-indigo-400 hover:text-white hover:bg-indigo-600 border border-indigo-500/20 bg-slate-950 rounded-xl transition-all shadow-sm cursor-pointer"
+                            title="Reset password override"
+                          >
+                            Reset Pass
+                          </button>
 
-                        <button
-                          onClick={() => setSelectedAgentForSubmissions(agent)}
-                          className="flex-1 min-w-[90px] text-center py-2 text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all shadow-md shadow-indigo-950/25 cursor-pointer"
-                        >
-                          View Leads →
-                        </button>
+                          <button
+                            onClick={() => setSelectedAgentForSubmissions(agent)}
+                            className="flex-1 text-center py-2 text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all shadow-md shadow-indigo-950/25 cursor-pointer"
+                          >
+                            View Leads →
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1359,6 +1645,188 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   className="px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl transition-all cursor-pointer"
                 >
                   {agentPasswordLoading ? 'Applying Override...' : 'Set New Password'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Create New Agent Modal */}
+      {isCreateAgentModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden p-6 relative"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <h3 className="font-extrabold text-white text-lg">Create New Agent</h3>
+              </div>
+              <button 
+                onClick={() => setIsCreateAgentModalOpen(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAgent} className="space-y-4">
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Agent Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Rajesh Kumar"
+                  value={newAgentName}
+                  onChange={(e) => setNewAgentName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">10-Digit Mobile Number</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={10}
+                  placeholder="9876543210"
+                  value={newAgentContact}
+                  onChange={(e) => setNewAgentContact(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Portal Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="Min 6 characters"
+                  value={newAgentPassword}
+                  onChange={(e) => setNewAgentPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650"
+                />
+              </div>
+
+              {createAgentErr && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold p-3 rounded-xl flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{createAgentErr}</span>
+                </div>
+              )}
+
+              {createAgentSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold p-3 rounded-xl flex items-center space-x-2 animate-pulse">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{createAgentSuccess}</span>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateAgentModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createAgentLoading}
+                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-800 disabled:text-slate-500 rounded-xl transition-all cursor-pointer flex items-center"
+                >
+                  {createAgentLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Agent Partner'
+                  )}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Delete Agent Modal */}
+      {agentToDelete && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden p-6 relative"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <h3 className="font-extrabold text-white text-lg">Delete Agent Partner</h3>
+              </div>
+              <button 
+                onClick={() => setAgentToDelete(null)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-rose-500/5 border border-rose-500/10 rounded-2xl p-4 mb-4 text-xs text-rose-300 leading-relaxed">
+              <p className="font-bold mb-1">⚠️ Warning: Irreversible Action</p>
+              <p>You are about to delete agent <strong className="text-white">{agentToDelete.name}</strong> ({agentToDelete.agentIdCode || agentToDelete.id}). They will immediately lose access to the portal.</p>
+            </div>
+
+            <form onSubmit={handleDeleteAgent} className="space-y-4">
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Enter Admin Password to Authorize
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Enter system administrator password"
+                  value={adminPasswordForDelete}
+                  onChange={(e) => setAdminPasswordForDelete(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650"
+                />
+              </div>
+
+              {deleteError && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold p-3 rounded-xl flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setAgentToDelete(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={deleteLoading}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:bg-slate-850 disabled:text-slate-500 rounded-xl transition-all cursor-pointer flex items-center"
+                >
+                  {deleteLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Confirm Delete Agent'
+                  )}
                 </button>
               </div>
             </form>

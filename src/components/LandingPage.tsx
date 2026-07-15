@@ -156,14 +156,34 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
     try {
       // Check if contactNumber already exists
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('contactNumber', '==', cleanPhone));
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("contactNumber", "==", cleanPhone));
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
-        setError('This mobile number is already registered.');
+        setError("This mobile number is already registered.");
         setLoading(false);
         return;
+      }
+
+      // Generate a unique random agent ID code (AS-SA001 to AS-SA999)
+      const allAgentsQuery = query(usersRef, where("role", "==", "agent"));
+      const allAgentsSnap = await getDocs(allAgentsQuery);
+      const existingCodes = new Set<string>();
+      allAgentsSnap.forEach((doc) => {
+        const data = doc.data();
+        if (data.agentIdCode) {
+          existingCodes.add(data.agentIdCode);
+        }
+      });
+
+      let num = Math.floor(Math.random() * 999) + 1;
+      let code = `AS-SA${String(num).padStart(3, "0")}`;
+      let attempts = 0;
+      while (existingCodes.has(code) && attempts < 1000) {
+        num = Math.floor(Math.random() * 999) + 1;
+        code = `AS-SA${String(num).padStart(3, "0")}`;
+        attempts++;
       }
 
       const hashedPassword = await hashPassword(password);
@@ -173,9 +193,10 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
         name: name.trim(),
         contactNumber: cleanPhone,
         password: hashedPassword,
-        role: 'agent' as UserRole,
+        role: "agent" as UserRole,
         isVerified: false,
-        createdAt: new Date().toISOString()
+        agentIdCode: code,
+        createdAt: new Date().toISOString(),
       };
 
       const docRef = await addDoc(usersRef, newAgentData);
@@ -183,10 +204,11 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
       const registeredUser: User = {
         id: docRef.id,
         name: newAgentData.name,
-        role: 'agent',
+        role: "agent",
         contactNumber: newAgentData.contactNumber,
         isVerified: false,
-        createdAt: newAgentData.createdAt
+        agentIdCode: code,
+        createdAt: newAgentData.createdAt,
       };
 
       onLoginSuccess(registeredUser);
