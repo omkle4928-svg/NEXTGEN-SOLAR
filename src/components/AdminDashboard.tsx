@@ -106,6 +106,43 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       querySnapshot.forEach((doc) => {
         list.push({ id: doc.id, ...doc.data() });
       });
+
+      // Find any agents missing an agentIdCode and assign them one
+      const missingAgents = list.filter(a => !a.agentIdCode);
+      if (missingAgents.length > 0) {
+        // Collect all existing codes
+        const existingCodes = new Set<string>();
+        list.forEach((a) => {
+          if (a.agentIdCode) {
+            existingCodes.add(a.agentIdCode);
+          }
+        });
+
+        // For each missing agent, generate and write a unique code
+        for (const agent of missingAgents) {
+          let num = Math.floor(Math.random() * 999) + 1;
+          let code = `AS-SA${String(num).padStart(3, '0')}`;
+          let attempts = 0;
+          while (existingCodes.has(code) && attempts < 1000) {
+            num = Math.floor(Math.random() * 999) + 1;
+            code = `AS-SA${String(num).padStart(3, '0')}`;
+            attempts++;
+          }
+          
+          existingCodes.add(code);
+          agent.agentIdCode = code; // Update local memory copy
+
+          // Save to Firestore asynchronously
+          try {
+            await updateDoc(doc(db, 'users', agent.id), {
+              agentIdCode: code
+            });
+          } catch (updateErr) {
+            console.error(`Error repairing agentIdCode for ${agent.name}:`, updateErr);
+          }
+        }
+      }
+
       // Sort agents by creation date or name
       list.sort((a, b) => {
         const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;

@@ -147,6 +147,37 @@ export default function AgentDashboard({ user, onLogout }: AgentDashboardProps) 
         if (userData.isVerified !== undefined) {
           setIsVerified(userData.isVerified);
         }
+
+        // Auto-repair missing agentIdCode if not set
+        if (!userData.agentIdCode) {
+          const usersRef = collection(db, 'users');
+          const allAgentsQuery = query(usersRef, where('role', '==', 'agent'));
+          const allAgentsSnap = await getDocs(allAgentsQuery);
+          const existingCodes = new Set<string>();
+          allAgentsSnap.forEach((doc) => {
+            const data = doc.data();
+            if (data.agentIdCode) {
+              existingCodes.add(data.agentIdCode);
+            }
+          });
+
+          let num = Math.floor(Math.random() * 999) + 1;
+          let code = `AS-SA${String(num).padStart(3, '0')}`;
+          let attempts = 0;
+          while (existingCodes.has(code) && attempts < 1000) {
+            num = Math.floor(Math.random() * 999) + 1;
+            code = `AS-SA${String(num).padStart(3, '0')}`;
+            attempts++;
+          }
+
+          await updateDoc(userDocRef, {
+            agentIdCode: code
+          });
+          
+          user.agentIdCode = code; // update memory ref so display matches
+        } else if (!user.agentIdCode) {
+          user.agentIdCode = userData.agentIdCode; // update memory ref
+        }
       }
     } catch (err) {
       console.error('Error fetching verification status:', err);
@@ -313,7 +344,14 @@ export default function AgentDashboard({ user, onLogout }: AgentDashboardProps) 
         {/* Welcome Block */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-black text-white tracking-tight">Welcome back, {user.name.split(' ')[0]}!</h2>
+            <h2 className="text-2xl font-black text-white tracking-tight flex items-center flex-wrap gap-2.5">
+              <span>Welcome back, {user.name.split(' ')[0]}!</span>
+              {user.agentIdCode && (
+                <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 text-xs font-bold font-mono rounded-md border border-indigo-500/20">
+                  {user.agentIdCode}
+                </span>
+              )}
+            </h2>
             <p className="text-sm text-slate-400 mt-0.5">Submit new installation consumer leads and monitor their verification status.</p>
           </div>
           <button
