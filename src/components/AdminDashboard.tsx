@@ -426,14 +426,25 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
         return;
       }
 
-      // Proceed to delete
+      // Proceed to delete all associated consumer lead documents (including embedded files/images)
+      const consumersRef = collection(db, 'consumers');
+      const q = query(consumersRef, where('agentId', '==', agentToDelete.id));
+      const querySnapshot = await getDocs(q);
+      
+      const deletePromises = querySnapshot.docs.map((docSnap) => 
+        deleteDoc(doc(db, 'consumers', docSnap.id))
+      );
+      await Promise.all(deletePromises);
+
+      // Now delete the agent's account document
       const agentDocRef = doc(db, 'users', agentToDelete.id);
       await deleteDoc(agentDocRef);
 
-      setActionSuccess(`Agent ${agentToDelete.name} has been deleted successfully.`);
+      setActionSuccess(`Agent ${agentToDelete.name} and all their ${querySnapshot.size} submitted lead files have been permanently deleted.`);
       setAgentToDelete(null);
       setAdminPasswordForDelete('');
       fetchAgents();
+      fetchAllConsumers();
 
       setTimeout(() => {
         setActionSuccess('');
