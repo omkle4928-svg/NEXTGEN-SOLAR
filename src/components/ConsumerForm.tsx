@@ -57,7 +57,8 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
     district: initialData?.district || '',
     pin: initialData?.pin || '',
     loanAmount: initialData?.loanAmount?.toString() || '',
-    remark: initialData?.remark || ''
+    remark: initialData?.remark || '',
+    passbookPhoto: initialData?.passbookPhoto || ''
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -745,6 +746,16 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
                     onChange={handleChange}
                     placeholder="E.g. SBIN0001234 (optional)"
                     className="mt-1.5 block w-full px-4 py-2.5 rounded-xl border border-slate-200 text-slate-800 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <ImageUploader
+                    id="passbookPhoto"
+                    label="Bank Passbook / Cancelled Cheque Photo (Optional)"
+                    required={false}
+                    value={formData.passbookPhoto}
+                    onChange={(base64) => handlePhotoChange('passbookPhoto', base64)}
                   />
                 </div>
 

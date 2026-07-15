@@ -45,6 +45,7 @@ export interface Consumer {
   pin: string; // *PIN
   loanAmount: number; // *LOAN AMOUNT
   remark?: string; // REMARK
+  passbookPhoto?: string; // Bank passbook photo (Optional)
 
   agentId: string; // Submitted by Agent ID
   agentName: string; // Submitted by Agent Name
