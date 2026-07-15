@@ -103,7 +103,6 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
       } else if (!/^\d{6}$/.test(formData.pin.trim())) {
         newErrors.pin = 'PIN Code must be exactly 6 digits';
       }
-      if (!formData.housePhoto) newErrors.housePhoto = 'House Photo is required';
       if (!formData.roofType) newErrors.roofType = 'Roof type is required';
       if (!formData.loadNeeded) newErrors.loadNeeded = 'Load Needed is required';
     }
@@ -538,12 +537,11 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
                 <div className="md:col-span-2">
                   <ImageUploader
                     id="housePhoto"
-                    label="House / Site Roof Photo (PoHOT)"
-                    required={true}
+                    label="House / Site Roof Photo (PoHOT) (Optional)"
+                    required={false}
                     value={formData.housePhoto}
                     onChange={(base64) => handlePhotoChange('housePhoto', base64)}
                   />
-                  {errors.housePhoto && <p className="mt-1 text-xs text-rose-500 flex items-center"><AlertCircle className="w-3.5 h-3.5 mr-1" />{errors.housePhoto}</p>}
                 </div>
               </div>
             </motion.div>

@@ -48,6 +48,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [selectedConsumer, setSelectedConsumer] = useState<Consumer | null>(null);
   const [actionSuccess, setActionSuccess] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // New features state
   const [activeTab, setActiveTab] = useState<'leads' | 'agents'>('leads');
@@ -56,6 +57,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [selectedAgentForSubmissions, setSelectedAgentForSubmissions] = useState<any | null>(null);
   const [agentLeadsSearch, setAgentLeadsSearch] = useState('');
   const [agentLeadsStatus, setAgentLeadsStatus] = useState('All');
+  const [agentSearchText, setAgentSearchText] = useState('');
 
   // Agent Creation state variables
   const [isCreateAgentModalOpen, setIsCreateAgentModalOpen] = useState(false);
@@ -68,6 +70,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   // Fill Lead on Behalf state variables
   const [onBehalfAgent, setOnBehalfAgent] = useState<any | null>(null);
+  const [editingConsumer, setEditingConsumer] = useState<Consumer | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSubmittingOnBehalf, setIsSubmittingOnBehalf] = useState(false);
   const [formOnBehalfError, setFormOnBehalfError] = useState('');
@@ -98,6 +101,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   // Fetch all agents
   const fetchAgents = async () => {
     setAgentsLoading(true);
+    setConnectionError(null);
     try {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('role', '==', 'agent'));
@@ -152,6 +156,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       setAgents(list);
     } catch (err) {
       console.error('Error fetching agents:', err);
+      setConnectionError('Could not reach the Cloud Firestore database backend. The system will continue to operate in offline mode.');
     } finally {
       setAgentsLoading(false);
     }
@@ -458,31 +463,44 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     }
   };
 
-  const handleOnBehalfFormSubmit = async (formData: Omit<Consumer, 'id' | 'agentId' | 'agentName' | 'createdAt'>) => {
-    if (!onBehalfAgent) return;
+  const handleFormSubmit = async (formData: Omit<Consumer, 'id' | 'agentId' | 'agentName' | 'createdAt'>) => {
     setIsSubmittingOnBehalf(true);
     setFormOnBehalfError('');
     try {
-      const consumersRef = collection(db, 'consumers');
-      const newConsumer = {
-        ...formData,
-        agentId: onBehalfAgent.id,
-        agentName: onBehalfAgent.name,
-        createdAt: new Date().toISOString()
-      };
-      await addDoc(consumersRef, newConsumer);
+      if (editingConsumer) {
+        const consumerDocRef = doc(db, 'consumers', editingConsumer.id);
+        const updatedConsumer = {
+          ...formData,
+          agentId: editingConsumer.agentId,
+          agentName: editingConsumer.agentName,
+          createdAt: editingConsumer.createdAt || new Date().toISOString()
+        };
+        await updateDoc(consumerDocRef, updatedConsumer);
+        setActionSuccess('Consumer Solar Lead updated successfully!');
+        setSelectedConsumer(null); // Close detail modal if open
+        setEditingConsumer(null);
+      } else if (onBehalfAgent) {
+        const consumersRef = collection(db, 'consumers');
+        const newConsumer = {
+          ...formData,
+          agentId: onBehalfAgent.id,
+          agentName: onBehalfAgent.name,
+          createdAt: new Date().toISOString()
+        };
+        await addDoc(consumersRef, newConsumer);
+        setActionSuccess(`Solar Lead submitted successfully on behalf of ${onBehalfAgent.name}!`);
+        setOnBehalfAgent(null);
+      }
 
-      setActionSuccess(`Solar Lead submitted successfully on behalf of ${onBehalfAgent.name}!`);
       setIsFormOpen(false);
-      setOnBehalfAgent(null);
       
       // Refresh consumer leads list
       fetchAllConsumers();
 
       setTimeout(() => setActionSuccess(''), 4000);
     } catch (err) {
-      console.error('Error submitting on behalf:', err);
-      setFormOnBehalfError('Failed to submit solar lead. Please try again.');
+      console.error('Error saving consumer:', err);
+      setFormOnBehalfError('Failed to save solar lead. Please try again.');
     } finally {
       setIsSubmittingOnBehalf(false);
     }
@@ -490,6 +508,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   const fetchAllConsumers = async () => {
     setIsRefreshing(true);
+    setConnectionError(null);
     try {
       const consumersRef = collection(db, 'consumers');
       const querySnapshot = await getDocs(consumersRef);
@@ -509,6 +528,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       setConsumers(list);
     } catch (err) {
       console.error('Error fetching consumers:', err);
+      setConnectionError('Could not reach the Cloud Firestore database backend. The system will continue to operate in offline mode.');
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -735,6 +755,35 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 relative z-10">
+        {connectionError && (
+          <div className="bg-rose-500/10 border border-rose-500/30 rounded-3xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-lg text-rose-200 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-rose-500/5 via-transparent to-transparent pointer-events-none" />
+            <div className="flex items-start space-x-3.5 relative z-10">
+              <div className="p-2.5 bg-rose-500/10 text-rose-400 rounded-2xl shrink-0 mt-0.5 animate-pulse border border-rose-500/20">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black tracking-tight text-rose-400">Database Connection Issue</h4>
+                <p className="text-xs text-rose-300/80 mt-1 leading-relaxed max-w-2xl">
+                  {connectionError}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setConnectionError(null);
+                fetchAllConsumers();
+                if (activeTab === 'agents') {
+                  fetchAgents();
+                }
+              }}
+              className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl text-xs transition-all cursor-pointer self-start md:self-auto"
+            >
+              Retry Connection
+            </button>
+          </div>
+        )}
+
         {/* Welcome Section & Export Button */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -1039,23 +1088,32 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               </div>
             </div>
           </>
-        ) : isFormOpen && onBehalfAgent ? (
-          /* Submission on behalf form */
+        ) : isFormOpen && (onBehalfAgent || editingConsumer) ? (
+          /* Submission form (On Behalf or Editing) */
           <div className="bg-slate-900/60 border border-slate-800 rounded-3xl shadow-xl p-6 space-y-6 backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div>
                 <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
                   <UserPlus className="w-5 h-5 text-indigo-400" />
-                  Submit Solar Lead on Behalf of
+                  {editingConsumer ? 'Edit Consumer Solar Lead' : 'Submit Solar Lead on Behalf of'}
                 </h3>
                 <p className="text-sm mt-0.5">
-                  Agent: <span className="text-indigo-400 font-extrabold">{onBehalfAgent.name}</span> ({onBehalfAgent.agentIdCode || onBehalfAgent.id})
+                  {editingConsumer ? (
+                    <>
+                      Editing Lead ID: <span className="text-indigo-400 font-extrabold">{editingConsumer.consumerId}</span> ({editingConsumer.name})
+                    </>
+                  ) : (
+                    <>
+                      Agent: <span className="text-indigo-400 font-extrabold">{onBehalfAgent?.name}</span> ({onBehalfAgent?.agentIdCode || onBehalfAgent?.id})
+                    </>
+                  )}
                 </p>
               </div>
               <button
                 onClick={() => {
                   setIsFormOpen(false);
                   setOnBehalfAgent(null);
+                  setEditingConsumer(null);
                   setFormOnBehalfError('');
                 }}
                 className="text-xs font-bold text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-750 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
@@ -1071,13 +1129,15 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             )}
 
             <ConsumerForm
-              onSubmit={handleOnBehalfFormSubmit}
+              onSubmit={handleFormSubmit}
               onCancel={() => {
                 setIsFormOpen(false);
                 setOnBehalfAgent(null);
+                setEditingConsumer(null);
                 setFormOnBehalfError('');
               }}
               isSubmitting={isSubmittingOnBehalf}
+              initialData={editingConsumer || undefined}
             />
           </div>
         ) : (
@@ -1112,6 +1172,24 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     <RefreshCw className={`w-4 h-4 mr-1.5 ${agentsLoading ? 'animate-spin' : ''}`} />
                     Reload Agents
                   </button>
+                </div>
+              </div>
+            )}
+
+            {!selectedAgentForSubmissions && agents.length > 0 && (
+              <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                <div className="relative w-full sm:max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search agents by name, ID or mobile number..."
+                    value={agentSearchText}
+                    onChange={(e) => setAgentSearchText(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-200 placeholder-slate-500"
+                  />
+                </div>
+                <div className="text-xs font-semibold text-slate-500">
+                  Total Active Agents: <span className="text-indigo-400 font-extrabold">{agents.length}</span>
                 </div>
               </div>
             )}
@@ -1331,147 +1409,169 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             ) : (
               /* Agent Cards Grid */
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {agents.map((agent) => {
-                  const agentLeads = consumers.filter(c => c.agentId === agent.id);
-                  const totalLeadsCount = agentLeads.length;
-                  const pendingLeadsCount = agentLeads.filter(c => c.status === 'Pending').length;
-
+                {(() => {
+                const filteredAgents = agents.filter(agent => {
+                  const searchLower = agentSearchText.toLowerCase();
                   return (
-                    <div
-                      key={agent.id}
-                      className="bg-slate-900/40 border border-slate-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
-                    >
-                      <div className="space-y-4">
-                        {/* Agent Card Header */}
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-indigo-500/10 text-indigo-300 rounded-2xl flex items-center justify-center font-black text-sm border border-indigo-500/20 shadow-sm shrink-0">
-                              {agent.name.charAt(0)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                                <h4 className="font-extrabold text-slate-200 text-sm truncate">{agent.name}</h4>
-                                {agent.agentIdCode && (
-                                  <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 text-[9px] font-bold font-mono rounded-md border border-indigo-500/10">
-                                    {agent.agentIdCode}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-slate-500 font-semibold truncate">Phone: {agent.contactNumber || 'N/A'}</p>
-                            </div>
-                          </div>
-                          
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0 ${
-                            agent.isVerified ?? true
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                          }`}>
-                            {agent.isVerified ?? true ? 'Verified & Active' : 'Pending Verification'}
-                          </span>
-                        </div>
+                    (agent.name || '').toLowerCase().includes(searchLower) ||
+                    (agent.contactNumber || '').toLowerCase().includes(searchLower) ||
+                    (agent.agentIdCode && agent.agentIdCode.toLowerCase().includes(searchLower)) ||
+                    (agent.id || '').toLowerCase().includes(searchLower)
+                  );
+                });
 
-                        {/* Agent Information Fields */}
-                        <div className="space-y-2 text-[11px] bg-slate-950/40 p-3 rounded-2xl border border-slate-800/80">
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-500 font-semibold">Mobile</span>
-                            <span className="text-slate-300 font-bold font-mono">{agent.contactNumber || 'N/A'}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-500 font-semibold">Registered</span>
-                            <span className="text-slate-300 font-bold">
-                              {agent.createdAt ? new Date(agent.createdAt).toLocaleDateString() : 'N/A'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-500 font-semibold">Password</span>
-                            <span className="font-mono bg-slate-950 px-2 py-0.5 border border-slate-800 text-slate-300 rounded-md font-semibold select-all">
-                              {agent.password && /^[0-9a-f]{64}$/i.test(agent.password)
-                                ? '•••••••• (Hashed)'
-                                : agent.password}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Submission Counts Section */}
-                        <div className="pt-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-400 font-bold">Total Submissions</span>
-                            <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-300 font-black rounded-lg text-[10px] border border-indigo-500/20">
-                              {totalLeadsCount} Leads
-                            </span>
-                          </div>
-                          {totalLeadsCount > 0 && (
-                            <p className="text-[10px] text-slate-500 mt-1 font-semibold flex items-center">
-                              <span className="w-2 h-2 rounded-full bg-amber-400 mr-1.5 inline-block animate-pulse"></span>
-                              {pendingLeadsCount} pending review
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Card Action Buttons */}
-                      <div className="pt-4 mt-4 border-t border-slate-800 space-y-2.5">
-                        <div className="flex gap-2 w-full">
-                          <button
-                            onClick={() => {
-                              setOnBehalfAgent(agent);
-                              setIsFormOpen(true);
-                              setFormOnBehalfError('');
-                            }}
-                            className="flex-1 text-center py-2 text-[10px] font-black text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center space-x-1"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Fill on Behalf</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setAgentToDelete(agent);
-                              setAdminPasswordForDelete('');
-                              setDeleteError('');
-                            }}
-                            className="px-3.5 py-2 text-[10px] font-bold text-rose-400 hover:text-white bg-rose-500/5 hover:bg-rose-950 hover:border-rose-800/50 border border-rose-500/10 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center"
-                            title="Delete Agent Partner"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex gap-2 w-full">
-                          <button
-                            onClick={() => handleToggleVerification(agent)}
-                            className={`flex-1 text-center py-2 text-[10px] font-black rounded-xl transition-all shadow-sm cursor-pointer border ${
-                              agent.isVerified ?? true
-                                ? 'text-amber-400 hover:text-white hover:bg-amber-600 border-amber-500/20 bg-slate-950/20'
-                                : 'text-emerald-400 hover:text-white hover:bg-emerald-600 border-emerald-500/20 bg-slate-950/20'
-                            }`}
-                          >
-                            {agent.isVerified ?? true ? 'Suspend' : 'Activate'}
-                          </button>
-                          
-                          <button
-                            onClick={() => {
-                              setSelectedAgentToReset(agent);
-                              setAgentNewPassword('');
-                              setAgentConfirmPassword('');
-                              setAgentPasswordError('');
-                              setAgentPasswordSuccess('');
-                            }}
-                            className="px-2.5 py-2 text-[10px] font-bold text-indigo-400 hover:text-white hover:bg-indigo-600 border border-indigo-500/20 bg-slate-950 rounded-xl transition-all shadow-sm cursor-pointer"
-                            title="Reset password override"
-                          >
-                            Reset Pass
-                          </button>
-
-                          <button
-                            onClick={() => setSelectedAgentForSubmissions(agent)}
-                            className="flex-1 text-center py-2 text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all shadow-md shadow-indigo-950/25 cursor-pointer"
-                          >
-                            View Leads →
-                          </button>
-                        </div>
-                      </div>
+                if (filteredAgents.length === 0) {
+                  return (
+                    <div className="col-span-full text-center py-12 border border-dashed border-slate-800 rounded-3xl bg-slate-900/10">
+                      <Search className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+                      <h4 className="font-bold text-slate-300 text-sm">No agent partners found</h4>
+                      <p className="text-xs text-slate-500 mt-1">No agents match "{agentSearchText}"</p>
                     </div>
                   );
-                })}
+                }
+
+                return filteredAgents.map((agent) => {
+                      const agentLeads = consumers.filter(c => c.agentId === agent.id);
+                      const totalLeadsCount = agentLeads.length;
+                      const pendingLeadsCount = agentLeads.filter(c => c.status === 'Pending').length;
+
+                      return (
+                        <div
+                          key={agent.id}
+                          className="bg-slate-900/40 border border-slate-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                        >
+                          <div className="space-y-4">
+                            {/* Agent Card Header */}
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 bg-indigo-500/10 text-indigo-300 rounded-2xl flex items-center justify-center font-black text-sm border border-indigo-500/20 shadow-sm shrink-0">
+                                  {agent.name.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                    <h4 className="font-extrabold text-slate-200 text-sm truncate">{agent.name}</h4>
+                                    {agent.agentIdCode && (
+                                      <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 text-[9px] font-bold font-mono rounded-md border border-indigo-500/10">
+                                        {agent.agentIdCode}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 font-semibold truncate">Phone: {agent.contactNumber || 'N/A'}</p>
+                                </div>
+                              </div>
+                              
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0 ${
+                                agent.isVerified ?? true
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                              }`}>
+                                {agent.isVerified ?? true ? 'Verified & Active' : 'Pending Verification'}
+                              </span>
+                            </div>
+
+                            {/* Agent Information Fields */}
+                            <div className="space-y-2 text-[11px] bg-slate-950/40 p-3 rounded-2xl border border-slate-800/80">
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-500 font-semibold">Mobile</span>
+                                <span className="text-slate-300 font-bold font-mono">{agent.contactNumber || 'N/A'}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-500 font-semibold">Registered</span>
+                                <span className="text-slate-300 font-bold">
+                                  {agent.createdAt ? new Date(agent.createdAt).toLocaleDateString() : 'N/A'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-500 font-semibold">Password</span>
+                                <span className="font-mono bg-slate-950 px-2 py-0.5 border border-slate-800 text-slate-300 rounded-md font-semibold select-all">
+                                  {agent.password && /^[0-9a-f]{64}$/i.test(agent.password)
+                                    ? '•••••••• (Hashed)'
+                                    : agent.password}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Submission Counts Section */}
+                            <div className="pt-2">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-400 font-bold">Total Submissions</span>
+                                <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-300 font-black rounded-lg text-[10px] border border-indigo-500/20">
+                                  {totalLeadsCount} Leads
+                                </span>
+                              </div>
+                              {totalLeadsCount > 0 && (
+                                <p className="text-[10px] text-slate-505 mt-1 font-semibold flex items-center">
+                                  <span className="w-2 h-2 rounded-full bg-amber-400 mr-1.5 inline-block animate-pulse"></span>
+                                  {pendingLeadsCount} pending review
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Card Action Buttons */}
+                          <div className="pt-4 mt-4 border-t border-slate-800 space-y-2.5">
+                            <div className="flex gap-2 w-full">
+                              <button
+                                onClick={() => {
+                                  setOnBehalfAgent(agent);
+                                  setIsFormOpen(true);
+                                  setFormOnBehalfError('');
+                                }}
+                                className="flex-1 text-center py-2 text-[10px] font-black text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center space-x-1"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Fill on Behalf</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setAgentToDelete(agent);
+                                  setAdminPasswordForDelete('');
+                                  setDeleteError('');
+                                }}
+                                className="px-3.5 py-2 text-[10px] font-bold text-rose-400 hover:text-white bg-rose-500/5 hover:bg-rose-950 hover:border-rose-800/50 border border-rose-500/10 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center"
+                                title="Delete Agent Partner"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <div className="flex gap-2 w-full">
+                              <button
+                                onClick={() => handleToggleVerification(agent)}
+                                className={`flex-1 text-center py-2 text-[10px] font-black rounded-xl transition-all shadow-sm cursor-pointer border ${
+                                  agent.isVerified ?? true
+                                    ? 'text-amber-400 hover:text-white hover:bg-amber-600 border-amber-500/20 bg-slate-950/20'
+                                    : 'text-emerald-400 hover:text-white hover:bg-emerald-600 border-emerald-500/20 bg-slate-950/20'
+                                }`}
+                              >
+                                {agent.isVerified ?? true ? 'Suspend' : 'Activate'}
+                              </button>
+                              
+                              <button
+                                onClick={() => {
+                                  setSelectedAgentToReset(agent);
+                                  setAgentNewPassword('');
+                                  setAgentConfirmPassword('');
+                                  setAgentPasswordError('');
+                                  setAgentPasswordSuccess('');
+                                }}
+                                className="px-2.5 py-2 text-[10px] font-bold text-indigo-400 hover:text-white hover:bg-indigo-600 border border-indigo-500/20 bg-slate-950 rounded-xl transition-all shadow-sm cursor-pointer"
+                                title="Reset password override"
+                              >
+                                Reset Pass
+                              </button>
+
+                              <button
+                                onClick={() => setSelectedAgentForSubmissions(agent)}
+                                className="flex-1 text-center py-2 text-[10px] font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all shadow-md shadow-indigo-950/25 cursor-pointer"
+                              >
+                                View Leads →
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                })()}
               </div>
             )}
           </div>
@@ -1486,6 +1586,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           userRole="admin"
           onClose={() => setSelectedConsumer(null)}
           onUpdateStatus={handleUpdateStatusAndRemark}
+          onEdit={(consumer) => {
+            setEditingConsumer(consumer);
+            setIsFormOpen(true);
+          }}
         />
       )}
 

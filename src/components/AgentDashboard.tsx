@@ -39,6 +39,7 @@ export default function AgentDashboard({ user, onLogout }: AgentDashboardProps) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // Password Change States
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -113,6 +114,7 @@ export default function AgentDashboard({ user, onLogout }: AgentDashboardProps) 
   // Fetch consumers submitted by this agent
   const fetchConsumers = async () => {
     setLoading(true);
+    setConnectionError(null);
     try {
       const consumersRef = collection(db, 'consumers');
       const q = query(consumersRef, where('agentId', '==', user.id));
@@ -133,6 +135,7 @@ export default function AgentDashboard({ user, onLogout }: AgentDashboardProps) 
       setConsumers(list);
     } catch (err) {
       console.error('Error fetching consumers:', err);
+      setConnectionError('Could not reach the Cloud Firestore database backend. The system will continue to operate in offline mode.');
     } finally {
       setLoading(false);
     }
@@ -320,6 +323,33 @@ export default function AgentDashboard({ user, onLogout }: AgentDashboardProps) 
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 relative z-10">
+        {connectionError && (
+          <div className="bg-rose-500/10 border border-rose-500/30 rounded-3xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-lg text-rose-200 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-rose-500/5 via-transparent to-transparent pointer-events-none" />
+            <div className="flex items-start space-x-3.5 relative z-10">
+              <div className="p-2.5 bg-rose-500/10 text-rose-400 rounded-2xl shrink-0 mt-0.5 animate-pulse border border-rose-500/20">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black tracking-tight text-rose-400">Database Connection Issue</h4>
+                <p className="text-xs text-rose-300/80 mt-1 leading-relaxed max-w-2xl">
+                  {connectionError}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setConnectionError(null);
+                fetchConsumers();
+                checkVerificationStatus();
+              }}
+              className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl text-xs transition-all cursor-pointer self-start md:self-auto"
+            >
+              Retry Connection
+            </button>
+          </div>
+        )}
+
         {/* Verification Alert Banner */}
         {!isVerified && (
           <div className="bg-amber-500/5 border border-amber-500/20 rounded-3xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-lg text-amber-200 relative overflow-hidden">

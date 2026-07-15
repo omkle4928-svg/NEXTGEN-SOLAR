@@ -199,7 +199,7 @@ export default function ConsumerDetailModal({
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {userRole === 'agent' && onEdit && (
+            {(userRole === 'agent' || userRole === 'admin') && onEdit && (
               <button
                 onClick={() => {
                   onEdit(consumer);
@@ -479,21 +479,23 @@ export default function ConsumerDetailModal({
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-400">No Image Uploaded</div>
+                        <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs italic font-medium">Optional House Photo Not Uploaded</div>
                       )}
-                      <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2">
-                        <button 
-                          onClick={() => setLightboxImage({ src: consumer.housePhoto, title: 'House / Site Roof Photo' })}
-                          className="p-2 bg-white/95 hover:bg-white text-slate-800 rounded-xl shadow-lg transition-transform focus:outline-none hover:scale-105"
-                          title="View Enlarged"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
+                      {consumer.housePhoto && (
+                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2">
+                          <button 
+                            onClick={() => setLightboxImage({ src: consumer.housePhoto!, title: 'House / Site Roof Photo' })}
+                            className="p-2 bg-white/95 hover:bg-white text-slate-800 rounded-xl shadow-lg transition-transform focus:outline-none hover:scale-105"
+                            title="View Enlarged"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="px-4 py-2.5 bg-white border-t border-slate-100 flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-700">House Roof Photo</span>
-                      <span className="text-[10px] font-mono bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">{consumer.loadNeeded}</span>
+                      <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{consumer.loadNeeded}</span>
                     </div>
                   </div>
 
