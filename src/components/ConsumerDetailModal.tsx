@@ -695,15 +695,18 @@ export default function ConsumerDetailModal({
                       const isUploadingThis = updatingDocField === fieldName;
 
                       return (
-                        <div key={docItem.field} className="p-3 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="flex items-center space-x-3 min-w-0 flex-1">
-                            <div className={`p-2 rounded-xl flex-shrink-0 ${fileValue ? 'bg-rose-50 text-rose-500' : 'bg-slate-200 text-slate-400'}`}>
+                        <div key={docItem.field} className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-3">
+                          {/* Document Name & Status */}
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <div className={`p-2 rounded-xl flex-shrink-0 ${fileValue ? 'bg-rose-50 text-rose-500 border border-rose-100' : 'bg-slate-100 text-slate-400 border border-slate-200/60'}`}>
                               <FileText className="w-5 h-5" />
                             </div>
-                            <div className="min-w-0">
-                              <span className="text-xs font-semibold text-slate-700 block truncate">{docItem.label}</span>
+                            <div className="min-w-0 flex-1">
+                              <span className="text-xs font-semibold text-slate-700 block truncate" title={docItem.label}>
+                                {docItem.label}
+                              </span>
                               {fileValue ? (
-                                <span className="text-[10px] text-emerald-600 font-medium flex items-center mt-0.5">
+                                <span className="text-[10px] text-emerald-600 font-bold flex items-center mt-0.5">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 inline-block animate-pulse"></span>
                                   Uploaded
                                 </span>
@@ -715,18 +718,19 @@ export default function ConsumerDetailModal({
                             </div>
                           </div>
 
-                          <div className="flex items-center space-x-1.5 flex-shrink-0">
+                          {/* Action Buttons Row */}
+                          <div className="flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-slate-100">
                             {isUploadingThis ? (
-                              <div className="flex items-center space-x-1 px-3 py-1.5">
+                              <div className="flex items-center space-x-1 px-3 py-1.5 bg-indigo-50/50 rounded-lg">
                                 <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                                <span className="text-[10px] text-slate-400 font-semibold">Saving...</span>
+                                <span className="text-[10px] text-indigo-600 font-semibold">Uploading...</span>
                               </div>
                             ) : fileValue ? (
                               <>
                                 <button
                                   type="button"
                                   onClick={() => setLightboxImage({ src: fileValue, title: `${docItem.label} Document` })}
-                                  className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer"
+                                  className="px-2.5 py-1.5 text-[11px] font-bold text-indigo-600 hover:text-white bg-white hover:bg-indigo-600 border border-slate-200 hover:border-indigo-600 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer"
                                 >
                                   <Eye className="w-3.5 h-3.5" />
                                   <span>View</span>
@@ -734,7 +738,7 @@ export default function ConsumerDetailModal({
                                 <a
                                   href={fileValue}
                                   download={`${consumer.name.replace(/\s+/g, '_')}_${docItem.label.replace(/\s+/g, '_')}.pdf`}
-                                  className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm"
+                                  className="px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 hover:text-white bg-white hover:bg-emerald-600 border border-slate-200 hover:border-emerald-600 rounded-lg transition-all flex items-center space-x-1 shadow-sm"
                                 >
                                   <Download className="w-3.5 h-3.5" />
                                   <span>Download</span>
@@ -743,7 +747,7 @@ export default function ConsumerDetailModal({
                                   <button
                                     type="button"
                                     onClick={() => handleDocDelete(fieldName)}
-                                    className="px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer"
+                                    className="px-2.5 py-1.5 text-[11px] font-bold text-rose-600 hover:text-white bg-white hover:bg-rose-600 border border-slate-200 hover:border-rose-600 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer ml-auto"
                                   >
                                     <XCircle className="w-3.5 h-3.5" />
                                     <span>Remove</span>
@@ -752,7 +756,7 @@ export default function ConsumerDetailModal({
                               </>
                             ) : (
                               userRole === 'admin' ? (
-                                <label className="px-3 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer">
+                                <label className="w-full px-3 py-1.5 text-[11px] font-bold text-indigo-600 hover:text-white bg-white hover:bg-indigo-600 border border-slate-200 hover:border-indigo-600 rounded-lg transition-all flex items-center justify-center space-x-1 shadow-sm cursor-pointer">
                                   <Upload className="w-3.5 h-3.5 mr-1" />
                                   <span>Upload PDF</span>
                                   <input
@@ -776,7 +780,9 @@ export default function ConsumerDetailModal({
                                     }}
                                   />
                                 </label>
-                              ) : null
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">No access to upload</span>
+                              )
                             )}
                           </div>
                         </div>
