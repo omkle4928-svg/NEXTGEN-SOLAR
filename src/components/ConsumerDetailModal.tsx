@@ -21,7 +21,8 @@ import {
   MessageSquare,
   RefreshCw,
   Award,
-  Sun
+  Sun,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -31,6 +32,7 @@ interface ConsumerDetailModalProps {
   onClose: () => void;
   userRole: UserRole;
   onUpdateStatus?: (consumerId: string, status: Consumer['status'], remark: string) => Promise<void>;
+  onUpdateAdminDocs?: (consumerId: string, docUpdates: Partial<Consumer>) => Promise<void>;
   onEdit?: (consumer: Consumer) => void;
 }
 
@@ -40,12 +42,39 @@ export default function ConsumerDetailModal({
   onClose, 
   userRole, 
   onUpdateStatus,
+  onUpdateAdminDocs,
   onEdit
 }: ConsumerDetailModalProps) {
   const [adminStatus, setAdminStatus] = useState<Consumer['status']>(consumer.status);
   const [adminRemark, setAdminRemark] = useState<string>(consumer.remark || '');
   const [isUpdating, setIsUpdating] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<{ src: string, title: string } | null>(null);
+  const [updatingDocField, setUpdatingDocField] = useState<string | null>(null);
+
+  const handleDocUpload = async (field: keyof Consumer, base64: string) => {
+    if (!onUpdateAdminDocs) return;
+    try {
+      setUpdatingDocField(field);
+      await onUpdateAdminDocs(consumer.id, { [field]: base64 });
+    } catch (error) {
+      console.error('Failed to upload document:', error);
+    } finally {
+      setUpdatingDocField(null);
+    }
+  };
+
+  const handleDocDelete = async (field: keyof Consumer) => {
+    if (!onUpdateAdminDocs) return;
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
+    try {
+      setUpdatingDocField(field);
+      await onUpdateAdminDocs(consumer.id, { [field]: '' });
+    } catch (error) {
+      console.error('Failed to delete document:', error);
+    } finally {
+      setUpdatingDocField(null);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -157,17 +186,33 @@ export default function ConsumerDetailModal({
               <X className="w-6 h-6" />
             </button>
             <div className="max-w-4xl max-h-[80vh] relative rounded-xl overflow-hidden shadow-2xl bg-slate-900 border border-slate-800" onClick={e => e.stopPropagation()}>
-              <img 
-                src={lightboxImage.src} 
-                alt={lightboxImage.title} 
-                className="max-w-full max-h-[75vh] object-contain"
-                referrerPolicy="no-referrer"
-              />
+              {lightboxImage.src.startsWith('data:application/pdf') ? (
+                <div className="w-[80vw] max-w-2xl h-[50vh] flex flex-col items-center justify-center text-white p-8 space-y-4">
+                  <FileText className="w-16 h-16 text-rose-500 animate-bounce" />
+                  <h3 className="text-lg font-bold">PDF Document</h3>
+                  <p className="text-xs text-slate-400 text-center max-w-md">This is a PDF file. Browser security policies restrict previewing PDF data URLs directly. Please use the button below to download and view the document.</p>
+                  <a
+                    href={lightboxImage.src}
+                    download={`${consumer.name.replace(/\s+/g, '_')}_${lightboxImage.title.replace(/\s+/g, '_')}.pdf`}
+                    className="flex items-center text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 rounded-xl transition-colors shadow-lg"
+                  >
+                    <Download className="w-4 h-4 mr-1.5" />
+                    Download and Open PDF
+                  </a>
+                </div>
+              ) : (
+                <img 
+                  src={lightboxImage.src} 
+                  alt={lightboxImage.title} 
+                  className="max-w-full max-h-[75vh] object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              )}
               <div className="bg-slate-900 px-6 py-4 flex items-center justify-between text-white border-t border-slate-800">
                 <span className="font-semibold text-sm">{lightboxImage.title}</span>
                 <a 
                   href={lightboxImage.src} 
-                  download={`${consumer.name.replace(/\s+/g, '_')}_${lightboxImage.title.replace(/\s+/g, '_')}.jpg`}
+                  download={`${consumer.name.replace(/\s+/g, '_')}_${lightboxImage.title.replace(/\s+/g, '_')}.${lightboxImage.src.startsWith('data:application/pdf') ? 'pdf' : 'jpg'}`}
                   className="flex items-center text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" />
@@ -247,6 +292,15 @@ export default function ConsumerDetailModal({
                       <span className="text-sm text-slate-700 font-semibold">{consumer.contactNumber}</span>
                     </div>
                   </div>
+                  {consumer.alternateContactNumber && (
+                    <div className="flex items-center space-x-2">
+                      <Phone className="w-4 h-4 text-slate-400" />
+                      <div>
+                        <span className="text-xs text-slate-400 block font-medium">Alternate Contact Number</span>
+                        <span className="text-sm text-slate-700 font-semibold">{consumer.alternateContactNumber}</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center space-x-2">
                     <Mail className="w-4 h-4 text-slate-400" />
                     <div>
@@ -583,8 +637,150 @@ export default function ConsumerDetailModal({
                       </div>
                     </div>
                   )}
+
+                  {/* ELECTRICITY BILL */}
+                  {consumer.electricityBill && (
+                    <div className="group border border-slate-100 rounded-2xl overflow-hidden shadow-sm bg-slate-50 relative">
+                      <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 relative flex items-center justify-center">
+                        {consumer.electricityBill.startsWith('data:application/pdf') ? (
+                          <div className="flex flex-col items-center justify-center text-rose-500 space-y-2">
+                            <FileText className="w-12 h-12" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Electricity Bill (PDF)</span>
+                          </div>
+                        ) : (
+                          <img 
+                            src={consumer.electricityBill} 
+                            alt="Electricity Bill" 
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2">
+                          <button 
+                            onClick={() => setLightboxImage({ src: consumer.electricityBill!, title: 'Electricity Bill (PoE)' })}
+                            className="p-2 bg-white/95 hover:bg-white text-slate-800 rounded-xl shadow-lg transition-transform focus:outline-none hover:scale-105"
+                            title="View / Download"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="px-4 py-2.5 bg-white border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-700">Electricity Bill (PoE)</span>
+                        <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded">Optional</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Administrative PDF Documents Section (Visible to Admins only) */}
+              {(userRole === 'admin' || userRole === 'view_only_admin') && (
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center">
+                    <FileText className="w-4 h-4 mr-1.5 text-indigo-500" />
+                    Administrative Documents (PDF)
+                  </h4>
+                  
+                  <div className="space-y-2.5">
+                    {[
+                      { label: 'Acknowledgement', field: 'acknowledgementPdf' },
+                      { label: 'E-token', field: 'eTokenPdf' },
+                      { label: 'Net Feasibility', field: 'netFeasibilityPdf' },
+                      { label: 'Metering Agreement', field: 'meteringAgreementPdf' },
+                      { label: 'Digital Approval Letter', field: 'digitalApprovalLetterPdf' }
+                    ].map((docItem) => {
+                      const fieldName = docItem.field as keyof Consumer;
+                      const fileValue = consumer[fieldName] as string | undefined;
+                      const isUploadingThis = updatingDocField === fieldName;
+
+                      return (
+                        <div key={docItem.field} className="p-3 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center space-x-3 min-w-0 flex-1">
+                            <div className={`p-2 rounded-xl flex-shrink-0 ${fileValue ? 'bg-rose-50 text-rose-500' : 'bg-slate-200 text-slate-400'}`}>
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-xs font-semibold text-slate-700 block truncate">{docItem.label}</span>
+                              {fileValue ? (
+                                <span className="text-[10px] text-emerald-600 font-medium flex items-center mt-0.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 inline-block animate-pulse"></span>
+                                  Uploaded
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-medium mt-0.5 block">
+                                  Not Uploaded
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-1.5 flex-shrink-0">
+                            {isUploadingThis ? (
+                              <div className="flex items-center space-x-1 px-3 py-1.5">
+                                <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                                <span className="text-[10px] text-slate-400 font-semibold">Saving...</span>
+                              </div>
+                            ) : fileValue ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setLightboxImage({ src: fileValue, title: `${docItem.label} Document` })}
+                                  className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>View</span>
+                                </button>
+                                <a
+                                  href={fileValue}
+                                  download={`${consumer.name.replace(/\s+/g, '_')}_${docItem.label.replace(/\s+/g, '_')}.pdf`}
+                                  className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>Download</span>
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDocDelete(fieldName)}
+                                  className="px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Remove</span>
+                                </button>
+                              </>
+                            ) : (
+                              <label className="px-3 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer">
+                                <Upload className="w-3.5 h-3.5 mr-1" />
+                                <span>Upload PDF</span>
+                                <input
+                                  type="file"
+                                  accept="application/pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      if (file.size > 2.5 * 1024 * 1024) {
+                                        alert('File is too large. Please select a file smaller than 2.5MB.');
+                                        return;
+                                      }
+                                      const reader = new FileReader();
+                                      reader.readAsDataURL(file);
+                                      reader.onload = (event) => {
+                                        const dataUrl = event.target?.result as string;
+                                        handleDocUpload(fieldName, dataUrl);
+                                      };
+                                    }
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Admin Decision panel or Agent Display Panel */}
               <div className="border-t border-slate-100 pt-6 space-y-4">

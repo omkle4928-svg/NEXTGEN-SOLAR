@@ -680,6 +680,30 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     }
   };
 
+  const handleUpdateAdminDocs = async (consumerId: string, docUpdates: Partial<Consumer>) => {
+    try {
+      const consumerDocRef = doc(db, 'consumers', consumerId);
+      await updateDoc(consumerDocRef, docUpdates);
+
+      // Update local state
+      setConsumers((prev) => 
+        prev.map((c) => c.id === consumerId ? { ...c, ...docUpdates } : c)
+      );
+
+      // Also update selected consumer if open
+      if (selectedConsumer && selectedConsumer.id === consumerId) {
+        setSelectedConsumer((prev) => prev ? { ...prev, ...docUpdates } : null);
+      }
+
+      setActionSuccess('Documents updated successfully!');
+      setTimeout(() => setActionSuccess(''), 4000);
+    } catch (err) {
+      console.error('Error updating admin docs:', err);
+      alert('Failed to update documents. Please try again.');
+      throw err;
+    }
+  };
+
   const getUniqueAgents = () => {
     const agents = new Set<string>();
     consumers.forEach(c => {
@@ -1727,6 +1751,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           userRole={user.role}
           onClose={() => setSelectedConsumer(null)}
           onUpdateStatus={user.role !== 'view_only_admin' ? handleUpdateStatusAndRemark : undefined}
+          onUpdateAdminDocs={handleUpdateAdminDocs}
           onEdit={user.role !== 'view_only_admin' ? (consumer) => {
             setEditingConsumer(consumer);
             setIsFormOpen(true);

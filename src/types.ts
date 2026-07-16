@@ -48,6 +48,15 @@ export interface Consumer {
   passbookPhoto?: string; // Bank passbook photo (Optional)
   supportingDoc1?: string; // Supporting document 1 (Optional)
   supportingDoc2?: string; // Supporting document 2 (Optional)
+  alternateContactNumber?: string; // Alternate phone number (Optional)
+  electricityBill?: string; // Electricity bill (Base64 PDF / image) (Optional)
+
+  // Administrative Documents (Admin Uploadable/Downloadable)
+  acknowledgementPdf?: string; // Acknowledgement
+  eTokenPdf?: string; // E-token
+  netFeasibilityPdf?: string; // Net Feasibility
+  meteringAgreementPdf?: string; // Metering Agreement
+  digitalApprovalLetterPdf?: string; // Digital Approval Letter
 
   agentId: string; // Submitted by Agent ID
   agentName: string; // Submitted by Agent Name

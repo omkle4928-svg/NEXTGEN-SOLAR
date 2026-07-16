@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Consumer } from '../types';
 import ImageUploader from './ImageUploader';
+import FileUploader from './FileUploader';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronRight, 
@@ -66,7 +67,9 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
     remark: initialData?.remark || '',
     passbookPhoto: initialData?.passbookPhoto || '',
     supportingDoc1: initialData?.supportingDoc1 || '',
-    supportingDoc2: initialData?.supportingDoc2 || ''
+    supportingDoc2: initialData?.supportingDoc2 || '',
+    alternateContactNumber: initialData?.alternateContactNumber || '',
+    electricityBill: initialData?.electricityBill || ''
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -81,6 +84,11 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
         newErrors.contactNumber = 'Contact Number is required';
       } else if (!/^\d{10}$/.test(formData.contactNumber.trim())) {
         newErrors.contactNumber = 'Contact Number must be exactly 10 digits';
+      }
+      if (formData.alternateContactNumber && formData.alternateContactNumber.trim()) {
+        if (!/^\d{10}$/.test(formData.alternateContactNumber.trim())) {
+          newErrors.alternateContactNumber = 'Alternate Contact Number must be exactly 10 digits';
+        }
       }
       if (!formData.email.trim()) {
         newErrors.email = 'Email Address is required';
@@ -369,6 +377,23 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
                 </div>
 
                 <div>
+                  <label htmlFor="alternateContactNumber" className="block text-sm font-medium text-slate-700">
+                    Alternate Contact Number <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="tel"
+                    id="alternateContactNumber"
+                    name="alternateContactNumber"
+                    maxLength={10}
+                    value={formData.alternateContactNumber}
+                    onChange={handleChange}
+                    placeholder="10-digit alternate mobile number"
+                    className={`mt-1.5 block w-full px-4 py-2.5 rounded-xl border ${errors.alternateContactNumber ? 'border-rose-300 focus:ring-rose-500 focus:border-rose-500' : 'border-slate-200 focus:ring-indigo-500 focus:border-indigo-500'} text-slate-800 bg-white shadow-sm focus:outline-none focus:ring-2`}
+                  />
+                  {errors.alternateContactNumber && <p className="mt-1 text-xs text-rose-500 flex items-center"><AlertCircle className="w-3.5 h-3.5 mr-1" />{errors.alternateContactNumber}</p>}
+                </div>
+
+                <div>
                   <label htmlFor="email" className="block text-sm font-medium text-slate-700">
                     Email Address <span className="text-rose-500">*</span>
                   </label>
@@ -453,6 +478,18 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
                   />
                   {errors.aadhaarPhotoBack && <p className="mt-1 text-xs text-rose-500 flex items-center"><AlertCircle className="w-3.5 h-3.5 mr-1" />{errors.aadhaarPhotoBack}</p>}
                 </div>
+              </div>
+
+              {/* Electricity Bill Row */}
+              <div className="pt-2">
+                <FileUploader
+                  id="electricityBill"
+                  label="Electricity Bill (PoE) (Optional)"
+                  required={false}
+                  value={formData.electricityBill}
+                  onChange={(base64) => handlePhotoChange('electricityBill', base64)}
+                  placeholderText="Upload PDF or Image of recent bill (Max 2.5MB)"
+                />
               </div>
             </motion.div>
           )}
