@@ -479,7 +479,7 @@ export default function ConsumerDetailModal({
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs italic font-medium">Optional House Photo Not Uploaded</div>
+                        <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs italic font-medium">House Photo Not Uploaded</div>
                       )}
                       {consumer.housePhoto && (
                         <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2">
