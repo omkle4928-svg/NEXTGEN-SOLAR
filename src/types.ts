@@ -57,6 +57,7 @@ export interface Consumer {
   netFeasibilityPdf?: string; // Net Feasibility
   meteringAgreementPdf?: string; // Metering Agreement
   digitalApprovalLetterPdf?: string; // Digital Approval Letter
+  quotationPdf?: string; // Quotation
 
   agentId: string; // Submitted by Agent ID
   agentName: string; // Submitted by Agent Name

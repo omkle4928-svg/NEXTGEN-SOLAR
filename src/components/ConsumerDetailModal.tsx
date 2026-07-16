@@ -688,7 +688,8 @@ export default function ConsumerDetailModal({
                       { label: 'E-token', field: 'eTokenPdf' },
                       { label: 'Net Feasibility', field: 'netFeasibilityPdf' },
                       { label: 'Metering Agreement', field: 'meteringAgreementPdf' },
-                      { label: 'Digital Approval Letter', field: 'digitalApprovalLetterPdf' }
+                      { label: 'Digital Approval Letter', field: 'digitalApprovalLetterPdf' },
+                      { label: 'Quotation', field: 'quotationPdf' }
                     ].map((docItem) => {
                       const fieldName = docItem.field as keyof Consumer;
                       const fileValue = consumer[fieldName] as string | undefined;
