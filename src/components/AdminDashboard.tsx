@@ -875,7 +875,12 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       (user.role !== 'view_only_admin' && c.agentName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       c.pin.includes(searchQuery);
 
-    const matchesStatus = statusFilter === 'All' || c.status === statusFilter;
+    const matchesStatus = 
+      statusFilter === 'All' 
+        ? true 
+        : statusFilter === 'Transfer'
+          ? (c.status === 'Transfer Pending' || c.status === 'Transfer Applied')
+          : c.status === statusFilter;
     const matchesAgent = agentFilter === 'All' || c.agentName === agentFilter;
 
     return matchesSearch && matchesStatus && matchesAgent;
@@ -1155,10 +1160,11 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       >
                         <option value="All">All Statuses</option>
                         <option value="Pending">Pending</option>
-                        <option value="Applied">Applied</option>
+                        <option value="Transfer">Transfer (All)</option>
                         <option value="Transfer Pending">Transfer Pending</option>
                         <option value="Transfer Applied">Transfer Applied</option>
                         <option value="Quotation">Quotation</option>
+                        <option value="Applied">Applied</option>
                         <option value="Loan">Loan</option>
                         <option value="Installed">Installed</option>
                         <option value="Completed">Completed</option>
@@ -1177,6 +1183,44 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                         </select>
                       )}
                     </div>
+                  </div>
+
+                  {/* Quick Filter Status Buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-3.5 border-t border-slate-800/40">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1.5">Quick Filters:</span>
+                    {[
+                      { label: 'Everything', value: 'All', count: consumers.length },
+                      { label: 'Pending', value: 'Pending', count: consumers.filter(c => c.status === 'Pending').length },
+                      { label: 'Transfer (All)', value: 'Transfer', count: consumers.filter(c => c.status === 'Transfer Pending' || c.status === 'Transfer Applied').length },
+                      { label: 'Transfer Pending', value: 'Transfer Pending', count: consumers.filter(c => c.status === 'Transfer Pending').length },
+                      { label: 'Transfer Applied', value: 'Transfer Applied', count: consumers.filter(c => c.status === 'Transfer Applied').length },
+                      { label: 'Quotation', value: 'Quotation', count: consumers.filter(c => c.status === 'Quotation').length },
+                      { label: 'Applied', value: 'Applied', count: consumers.filter(c => c.status === 'Applied').length },
+                      { label: 'Loan', value: 'Loan', count: consumers.filter(c => c.status === 'Loan').length },
+                      { label: 'Installed', value: 'Installed', count: consumers.filter(c => c.status === 'Installed').length },
+                      { label: 'Completed', value: 'Completed', count: consumers.filter(c => c.status === 'Completed' || c.status === 'Approved').length },
+                    ].map((item) => {
+                      const isActive = statusFilter === item.value;
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          onClick={() => setStatusFilter(item.value)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer border ${
+                            isActive
+                              ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/50 shadow-sm'
+                              : 'bg-slate-950/80 text-slate-400 hover:text-slate-200 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <span>{item.label}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
+                            isActive ? 'bg-indigo-500/20 text-indigo-300 font-bold' : 'bg-slate-900 text-slate-500'
+                          }`}>
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
