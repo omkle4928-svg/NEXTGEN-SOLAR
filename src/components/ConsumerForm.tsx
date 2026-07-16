@@ -11,7 +11,8 @@ import {
   RefreshCw, 
   CreditCard,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react';
 
 interface ConsumerFormProps {
@@ -20,6 +21,11 @@ interface ConsumerFormProps {
   isSubmitting: boolean;
   initialData?: Consumer;
 }
+
+const isTransferNeeded = (transfer: string): boolean => {
+  const val = transfer.trim().toLowerCase();
+  return val !== '' && val !== 'no' && val !== 'n' && val !== 'false' && val !== 'none';
+};
 
 export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initialData }: ConsumerFormProps) {
   const [currentStep, setCurrentStep] = useState(1);
@@ -58,7 +64,9 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
     pin: initialData?.pin || '',
     loanAmount: initialData?.loanAmount?.toString() || '',
     remark: initialData?.remark || '',
-    passbookPhoto: initialData?.passbookPhoto || ''
+    passbookPhoto: initialData?.passbookPhoto || '',
+    supportingDoc1: initialData?.supportingDoc1 || '',
+    supportingDoc2: initialData?.supportingDoc2 || ''
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -85,13 +93,20 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
         newErrors.panNumber = 'Invalid PAN format (e.g. ABCDE1234F)';
       }
       if (!formData.panPhoto) newErrors.panPhoto = 'PAN Card Photo is required';
-      if (!formData.aadhaarNumber.trim()) {
-        newErrors.aadhaarNumber = 'Aadhaar Number is required';
-      } else if (!/^\d{12}$/.test(formData.aadhaarNumber.trim())) {
-        newErrors.aadhaarNumber = 'Aadhaar must be exactly 12 digits';
+      const transferActive = isTransferNeeded(formData.transfer);
+      if (transferActive) {
+        if (!formData.aadhaarNumber.trim()) {
+          newErrors.aadhaarNumber = 'Aadhaar Number is required when a transfer is involved';
+        } else if (!/^\d{12}$/.test(formData.aadhaarNumber.trim())) {
+          newErrors.aadhaarNumber = 'Aadhaar must be exactly 12 digits';
+        }
+        if (!formData.aadhaarPhoto) newErrors.aadhaarPhoto = 'Aadhaar Card Front Photo is required when a transfer is involved';
+        if (!formData.aadhaarPhotoBack) newErrors.aadhaarPhotoBack = 'Aadhaar Card Back Photo is required when a transfer is involved';
+      } else {
+        if (formData.aadhaarNumber.trim() && !/^\d{12}$/.test(formData.aadhaarNumber.trim())) {
+          newErrors.aadhaarNumber = 'Aadhaar must be exactly 12 digits';
+        }
       }
-      if (!formData.aadhaarPhoto) newErrors.aadhaarPhoto = 'Aadhaar Card Front Photo is required';
-      if (!formData.aadhaarPhotoBack) newErrors.aadhaarPhotoBack = 'Aadhaar Card Back Photo is required';
     }
 
     if (step === 2) {
@@ -105,6 +120,22 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
       }
       if (!formData.roofType) newErrors.roofType = 'Roof type is required';
       if (!formData.loadNeeded) newErrors.loadNeeded = 'Load Needed is required';
+    }
+
+    if (step === 3) {
+      if (isTransferNeeded(formData.transfer)) {
+        if (!formData.aadhaarNumber.trim()) {
+          newErrors.aadhaarNumber = 'Aadhaar Number is required when a transfer is involved';
+        } else if (!/^\d{12}$/.test(formData.aadhaarNumber.trim())) {
+          newErrors.aadhaarNumber = 'Aadhaar must be exactly 12 digits';
+        }
+        if (!formData.aadhaarPhoto) {
+          newErrors.aadhaarPhoto = 'Aadhaar Card Front Photo is required when a transfer is involved';
+        }
+        if (!formData.aadhaarPhotoBack) {
+          newErrors.aadhaarPhotoBack = 'Aadhaar Card Back Photo is required when a transfer is involved';
+        }
+      }
     }
 
     if (step === 4) {
@@ -637,6 +668,82 @@ export default function ConsumerForm({ onSubmit, onCancel, isSubmitting, initial
                     placeholder="Describe the reason for ownership/connection transfer"
                     className="mt-1.5 block w-full px-4 py-2.5 rounded-xl border border-slate-200 text-slate-800 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   />
+                </div>
+
+                {/* Aadhaar details and supporting document upload option on Transfer Page */}
+                <div className="md:col-span-2 space-y-4 pt-4 border-t border-slate-100">
+                  <div className="flex items-center space-x-2 text-indigo-400 font-bold text-sm">
+                    <CreditCard className="w-4 h-4" />
+                    <span>Aadhaar Details {isTransferNeeded(formData.transfer) ? '(Mandatory for Transfer)' : '(Optional)'}</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="md:col-span-2">
+                      <label htmlFor="transferAadhaarNumber" className="block text-sm font-medium text-slate-700">
+                        Aadhaar Number {isTransferNeeded(formData.transfer) && <span className="text-rose-500">*</span>}
+                      </label>
+                      <input
+                        type="text"
+                        id="transferAadhaarNumber"
+                        name="aadhaarNumber"
+                        maxLength={12}
+                        value={formData.aadhaarNumber}
+                        onChange={handleChange}
+                        placeholder="12-digit Aadhaar number"
+                        className={`mt-1.5 block w-full px-4 py-2.5 rounded-xl border ${errors.aadhaarNumber ? 'border-rose-300 focus:ring-rose-500 focus:border-rose-500' : 'border-slate-200 focus:ring-indigo-500 focus:border-indigo-500'} text-slate-800 bg-white shadow-sm focus:outline-none focus:ring-2`}
+                      />
+                      {errors.aadhaarNumber && <p className="mt-1 text-xs text-rose-500 flex items-center"><AlertCircle className="w-3.5 h-3.5 mr-1" />{errors.aadhaarNumber}</p>}
+                    </div>
+
+                    <div>
+                      <ImageUploader
+                        id="transferAadhaarPhoto"
+                        label={`Aadhaar Front Photo ${isTransferNeeded(formData.transfer) ? '*' : '(Optional)'}`}
+                        required={isTransferNeeded(formData.transfer)}
+                        value={formData.aadhaarPhoto}
+                        onChange={(base64) => handlePhotoChange('aadhaarPhoto', base64)}
+                      />
+                      {errors.aadhaarPhoto && <p className="mt-1 text-xs text-rose-500 flex items-center"><AlertCircle className="w-3.5 h-3.5 mr-1" />{errors.aadhaarPhoto}</p>}
+                    </div>
+
+                    <div>
+                      <ImageUploader
+                        id="transferAadhaarPhotoBack"
+                        label={`Aadhaar Back Photo ${isTransferNeeded(formData.transfer) ? '*' : '(Optional)'}`}
+                        required={isTransferNeeded(formData.transfer)}
+                        value={formData.aadhaarPhotoBack}
+                        onChange={(base64) => handlePhotoChange('aadhaarPhotoBack', base64)}
+                      />
+                      {errors.aadhaarPhotoBack && <p className="mt-1 text-xs text-rose-500 flex items-center"><AlertCircle className="w-3.5 h-3.5 mr-1" />{errors.aadhaarPhotoBack}</p>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 space-y-4 pt-4 border-t border-slate-100">
+                  <div className="flex items-center space-x-2 text-indigo-400 font-bold text-sm">
+                    <FileText className="w-4 h-4" />
+                    <span>Supporting Documents for Transfer (Optional)</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <ImageUploader
+                        id="supportingDoc1"
+                        label="Supporting Document 1 (Optional)"
+                        required={false}
+                        value={formData.supportingDoc1}
+                        onChange={(base64) => handlePhotoChange('supportingDoc1', base64)}
+                      />
+                    </div>
+
+                    <div>
+                      <ImageUploader
+                        id="supportingDoc2"
+                        label="Supporting Document 2 (Optional)"
+                        required={false}
+                        value={formData.supportingDoc2}
+                        onChange={(base64) => handlePhotoChange('supportingDoc2', base64)}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </motion.div>

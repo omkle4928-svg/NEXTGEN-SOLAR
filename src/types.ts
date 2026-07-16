@@ -46,6 +46,8 @@ export interface Consumer {
   loanAmount: number; // *LOAN AMOUNT
   remark?: string; // REMARK
   passbookPhoto?: string; // Bank passbook photo (Optional)
+  supportingDoc1?: string; // Supporting document 1 (Optional)
+  supportingDoc2?: string; // Supporting document 2 (Optional)
 
   agentId: string; // Submitted by Agent ID
   agentName: string; // Submitted by Agent Name
