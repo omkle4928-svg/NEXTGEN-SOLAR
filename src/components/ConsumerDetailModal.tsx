@@ -739,40 +739,44 @@ export default function ConsumerDetailModal({
                                   <Download className="w-3.5 h-3.5" />
                                   <span>Download</span>
                                 </a>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDocDelete(fieldName)}
-                                  className="px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer"
-                                >
-                                  <XCircle className="w-3.5 h-3.5" />
-                                  <span>Remove</span>
-                                </button>
+                                {userRole === 'admin' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDocDelete(fieldName)}
+                                    className="px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer"
+                                  >
+                                    <XCircle className="w-3.5 h-3.5" />
+                                    <span>Remove</span>
+                                  </button>
+                                )}
                               </>
                             ) : (
-                              <label className="px-3 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer">
-                                <Upload className="w-3.5 h-3.5 mr-1" />
-                                <span>Upload PDF</span>
-                                <input
-                                  type="file"
-                                  accept="application/pdf"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                      if (file.size > 2.5 * 1024 * 1024) {
-                                        alert('File is too large. Please select a file smaller than 2.5MB.');
-                                        return;
+                              userRole === 'admin' ? (
+                                <label className="px-3 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all flex items-center space-x-1 shadow-sm cursor-pointer">
+                                  <Upload className="w-3.5 h-3.5 mr-1" />
+                                  <span>Upload PDF</span>
+                                  <input
+                                    type="file"
+                                    accept="application/pdf"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) {
+                                        if (file.size > 2.5 * 1024 * 1024) {
+                                          alert('File is too large. Please select a file smaller than 2.5MB.');
+                                          return;
+                                        }
+                                        const reader = new FileReader();
+                                        reader.readAsDataURL(file);
+                                        reader.onload = (event) => {
+                                          const dataUrl = event.target?.result as string;
+                                          handleDocUpload(fieldName, dataUrl);
+                                        };
                                       }
-                                      const reader = new FileReader();
-                                      reader.readAsDataURL(file);
-                                      reader.onload = (event) => {
-                                        const dataUrl = event.target?.result as string;
-                                        handleDocUpload(fieldName, dataUrl);
-                                      };
-                                    }
-                                  }}
-                                />
-                              </label>
+                                    }}
+                                  />
+                                </label>
+                              ) : null
                             )}
                           </div>
                         </div>

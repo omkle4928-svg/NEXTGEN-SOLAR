@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Consumer } from '../types';
-import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc, addDoc, deleteDoc, deleteField } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { hashPassword } from '../utils/crypto';
 import ConsumerDetailModal from './ConsumerDetailModal';
@@ -767,17 +767,30 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   const handleUpdateAdminDocs = async (consumerId: string, docUpdates: Partial<Consumer>) => {
     try {
+      const dbUpdates: any = {};
+      const stateUpdates: any = {};
+
+      for (const [key, value] of Object.entries(docUpdates)) {
+        if (value === '' || value === undefined || value === null) {
+          dbUpdates[key] = deleteField();
+          stateUpdates[key] = ''; // Store as empty string in local state so UI handles it as falsy
+        } else {
+          dbUpdates[key] = value;
+          stateUpdates[key] = value;
+        }
+      }
+
       const consumerDocRef = doc(db, 'consumers', consumerId);
-      await updateDoc(consumerDocRef, docUpdates);
+      await updateDoc(consumerDocRef, dbUpdates);
 
       // Update local state
       setConsumers((prev) => 
-        prev.map((c) => c.id === consumerId ? { ...c, ...docUpdates } : c)
+        prev.map((c) => c.id === consumerId ? { ...c, ...stateUpdates } : c)
       );
 
       // Also update selected consumer if open
       if (selectedConsumer && selectedConsumer.id === consumerId) {
-        setSelectedConsumer((prev) => prev ? { ...prev, ...docUpdates } : null);
+        setSelectedConsumer((prev) => prev ? { ...prev, ...stateUpdates } : null);
       }
 
       setActionSuccess('Documents updated successfully!');
@@ -1895,7 +1908,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           userRole={user.role}
           onClose={() => setSelectedConsumer(null)}
           onUpdateStatus={user.role !== 'view_only_admin' ? handleUpdateStatusAndRemark : undefined}
-          onUpdateAdminDocs={handleUpdateAdminDocs}
+          onUpdateAdminDocs={user.role !== 'view_only_admin' ? handleUpdateAdminDocs : undefined}
           onEdit={user.role !== 'view_only_admin' ? (consumer) => {
             setEditingConsumer(consumer);
             setIsFormOpen(true);
