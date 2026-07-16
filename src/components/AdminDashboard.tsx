@@ -98,6 +98,17 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [agentPasswordSuccess, setAgentPasswordSuccess] = useState('');
   const [agentPasswordLoading, setAgentPasswordLoading] = useState(false);
 
+  // Admin Creation state variables (main admin only)
+  const [isCreateAdminModalOpen, setIsCreateAdminModalOpen] = useState(false);
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminRole, setNewAdminRole] = useState<'admin' | 'view_only_admin'>('view_only_admin');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [confirmMainAdminPassword, setConfirmMainAdminPassword] = useState('');
+  const [createAdminSuccess, setCreateAdminSuccess] = useState('');
+  const [createAdminErr, setCreateAdminErr] = useState('');
+  const [createAdminLoading, setCreateAdminLoading] = useState(false);
+
   // Fetch all agents
   const fetchAgents = async () => {
     setAgentsLoading(true);
@@ -240,6 +251,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   const handleChangeAgentPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'view_only_admin') {
+      setAgentPasswordError('Action unauthorized: View-only admins are restricted from this operation.');
+      return;
+    }
     setAgentPasswordError('');
     setAgentPasswordSuccess('');
 
@@ -288,6 +303,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   };
 
   const handleToggleVerification = async (agent: any) => {
+    if (user.role === 'view_only_admin') return;
     try {
       const agentDocRef = doc(db, 'users', agent.id);
       const newStatus = !(agent.isVerified ?? true);
@@ -313,6 +329,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   const handleCreateAgent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'view_only_admin') {
+      setCreateAgentErr('Action unauthorized: View-only admins are restricted from this operation.');
+      return;
+    }
     setCreateAgentErr('');
     setCreateAgentSuccess('');
 
@@ -399,8 +419,98 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     }
   };
 
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (user.role === 'view_only_admin') {
+      setCreateAdminErr('Action unauthorized: View-only admins are restricted from this operation.');
+      return;
+    }
+    setCreateAdminErr('');
+    setCreateAdminSuccess('');
+
+    if (!newAdminName.trim() || !newAdminEmail.trim() || !newAdminPassword.trim() || !confirmMainAdminPassword.trim()) {
+      setCreateAdminErr('All fields are required.');
+      return;
+    }
+
+    const cleanEmail = newAdminEmail.trim().toLowerCase();
+    if (!cleanEmail.endsWith('@admin.solar')) {
+      setCreateAdminErr('Admin email must end with @admin.solar');
+      return;
+    }
+
+    setCreateAdminLoading(true);
+
+    try {
+      // 1. Verify the main admin's password
+      let mainAdminPassword = 'IF_tL8a!t@U$tWa';
+      const adminDocRef = doc(db, 'admin_settings', 'profile');
+      const adminDocSnap = await getDoc(adminDocRef);
+      if (adminDocSnap.exists()) {
+        mainAdminPassword = adminDocSnap.data().password || 'IF_tL8a!t@U$tWa';
+      }
+
+      const isStoredHash = /^[0-9a-f]{64}$/i.test(mainAdminPassword);
+      const hashedInput = await hashPassword(confirmMainAdminPassword);
+      const isMatch = isStoredHash 
+        ? hashedInput === mainAdminPassword 
+        : confirmMainAdminPassword === mainAdminPassword;
+
+      if (!isMatch) {
+        setCreateAdminErr('Incorrect main admin password.');
+        setCreateAdminLoading(false);
+        return;
+      }
+
+      // 2. Check if the email is already registered in users
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', cleanEmail));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty || cleanEmail === 'mrigangka@admin.solar' || cleanEmail === 'mirza@admin.solar') {
+        setCreateAdminErr('This email is already registered.');
+        setCreateAdminLoading(false);
+        return;
+      }
+
+      // 3. Create the admin user
+      const hashedNewAdminPassword = await hashPassword(newAdminPassword);
+      const newAdminData = {
+        name: newAdminName.trim(),
+        email: cleanEmail,
+        password: hashedNewAdminPassword,
+        role: newAdminRole,
+        createdAt: new Date().toISOString()
+      };
+
+      await addDoc(usersRef, newAdminData);
+
+      setCreateAdminSuccess(`Admin (${newAdminRole === 'admin' ? 'Full' : 'View-Only'}) created successfully!`);
+      setNewAdminName('');
+      setNewAdminEmail('');
+      setNewAdminPassword('');
+      setConfirmMainAdminPassword('');
+      setNewAdminRole('view_only_admin');
+
+      setTimeout(() => {
+        setIsCreateAdminModalOpen(false);
+        setCreateAdminSuccess('');
+      }, 3000);
+
+    } catch (err) {
+      console.error('Error creating admin:', err);
+      setCreateAdminErr('Failed to create admin user. Please try again.');
+    } finally {
+      setCreateAdminLoading(false);
+    }
+  };
+
   const handleDeleteAgent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user.role === 'view_only_admin') {
+      setDeleteError('Action unauthorized: View-only admins are restricted from this operation.');
+      return;
+    }
     setDeleteError('');
 
     if (!adminPasswordForDelete) {
@@ -464,6 +574,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   };
 
   const handleFormSubmit = async (formData: Omit<Consumer, 'id' | 'agentId' | 'agentName' | 'createdAt'>) => {
+    if (user.role === 'view_only_admin') {
+      setFormOnBehalfError('Action unauthorized: View-only admins are restricted from this operation.');
+      return;
+    }
     setIsSubmittingOnBehalf(true);
     setFormOnBehalfError('');
     try {
@@ -540,6 +654,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   }, []);
 
   const handleUpdateStatusAndRemark = async (consumerId: string, status: Consumer['status'], remark: string) => {
+    if (user.role === 'view_only_admin') return;
     try {
       const consumerDocRef = doc(db, 'consumers', consumerId);
       await updateDoc(consumerDocRef, {
@@ -577,11 +692,12 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const exportToCSV = () => {
     if (consumers.length === 0) return;
 
+    const isViewOnly = user.role === 'view_only_admin';
     const headers = [
       'Name', 'Consumer ID', 'Contact Number', 'Email', 'PAN Number', 'Aadhaar Number',
       'CIBIL Score', 'Roof Type', 'Load Needed', 'Bank', 'Account No', 'IFSC', 
       'Address', 'Landmark', 'District', 'PIN', 'Loan Amount', 'Status', 'Date', 
-      'Agent Name', 'Remark', 'Submission Date'
+      ...(isViewOnly ? [] : ['Agent Name']), 'Remark', 'Submission Date'
     ];
 
     const rows = consumers.map(c => [
@@ -604,7 +720,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       c.loanAmount,
       c.status,
       c.date,
-      `"${c.agentName}"`,
+      ...(isViewOnly ? [] : [`"${c.agentName}"`]),
       `"${(c.remark || '').replace(/"/g, '""')}"`,
       c.createdAt
     ]);
@@ -647,7 +763,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       c.consumerId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.district.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.bank.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.agentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (user.role !== 'view_only_admin' && c.agentName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       c.pin.includes(searchQuery);
 
     const matchesStatus = statusFilter === 'All' || c.status === statusFilter;
@@ -744,6 +860,25 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             <Lock className="w-4 h-4 mr-1.5 text-slate-400" />
             <span className="hidden sm:inline">Change Password</span>
           </button>
+          {user.email === 'mrigangka@admin.solar' && (
+            <button 
+              onClick={() => {
+                setIsCreateAdminModalOpen(true);
+                setNewAdminName('');
+                setNewAdminEmail('');
+                setNewAdminPassword('');
+                setConfirmMainAdminPassword('');
+                setNewAdminRole('view_only_admin');
+                setCreateAdminErr('');
+                setCreateAdminSuccess('');
+              }}
+              className="flex items-center px-3 py-2 text-xs font-semibold text-amber-400 hover:text-amber-300 bg-amber-500/5 hover:bg-amber-500/15 border border-amber-500/20 rounded-xl transition-all cursor-pointer"
+              title="Create new admin"
+            >
+              <UserPlus className="w-4 h-4 mr-1.5 text-amber-400" />
+              <span className="hidden sm:inline">Create Admin</span>
+            </button>
+          )}
           <button 
             onClick={onLogout}
             className="flex items-center px-3 py-2 text-xs font-semibold text-rose-400 hover:text-rose-300 bg-rose-500/5 hover:bg-rose-500/15 border border-rose-500/20 rounded-xl transition-all"
@@ -822,17 +957,19 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             <Sun className="w-4 h-4" />
             <span>Installation Leads</span>
           </button>
-          <button
-            onClick={() => setActiveTab('agents')}
-            className={`py-3 px-6 font-bold text-sm border-b-2 transition-all cursor-pointer flex items-center space-x-2 ${
-              activeTab === 'agents'
-                ? 'border-amber-500 text-amber-500 bg-amber-500/5'
-                : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900/40'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Agent Partners</span>
-          </button>
+          {user.role !== 'view_only_admin' && (
+            <button
+              onClick={() => setActiveTab('agents')}
+              className={`py-3 px-6 font-bold text-sm border-b-2 transition-all cursor-pointer flex items-center space-x-2 ${
+                activeTab === 'agents'
+                  ? 'border-amber-500 text-amber-500 bg-amber-500/5'
+                  : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900/40'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Agent Partners</span>
+            </button>
+          )}
         </div>
 
         {activeTab === 'leads' ? (
@@ -918,16 +1055,18 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                         <option value="Completed">Completed</option>
                       </select>
 
-                      <select
-                        value={agentFilter}
-                        onChange={(e) => setAgentFilter(e.target.value)}
-                        className="px-3.5 py-2.5 rounded-xl border border-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-300"
-                      >
-                        <option value="All">All Agents</option>
-                        {getUniqueAgents().map((agent) => (
-                          <option key={agent} value={agent}>{agent}</option>
-                        ))}
-                      </select>
+                      {user.role !== 'view_only_admin' && (
+                        <select
+                          value={agentFilter}
+                          onChange={(e) => setAgentFilter(e.target.value)}
+                          className="px-3.5 py-2.5 rounded-xl border border-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-950 text-slate-300"
+                        >
+                          <option value="All">All Agents</option>
+                          {getUniqueAgents().map((agent) => (
+                            <option key={agent} value={agent}>{agent}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -959,7 +1098,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           <tr className="bg-slate-900/80 text-slate-400 text-[10px] uppercase font-bold tracking-wider border-b border-slate-800">
                             <th className="px-6 py-3.5">Submission Date</th>
                             <th className="px-6 py-3.5">Consumer</th>
-                            <th className="px-6 py-3.5">Agent Partner</th>
+                            {user.role !== 'view_only_admin' && <th className="px-6 py-3.5">Agent Partner</th>}
                             <th className="px-6 py-3.5">Specifications</th>
                             <th className="px-6 py-3.5 text-center">Verification Status</th>
                             <th className="px-6 py-3.5 text-right">Actions</th>
@@ -980,14 +1119,16 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                                   <span className="text-[10px] text-slate-500 font-mono mt-0.5">ID: {c.consumerId}</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-slate-300 whitespace-nowrap">
-                                <div className="flex items-center space-x-1.5">
-                                  <div className="w-5.5 h-5.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full flex items-center justify-center font-bold text-[10px]">
-                                    {c.agentName.charAt(0)}
+                              {user.role !== 'view_only_admin' && (
+                                <td className="px-6 py-4 text-slate-300 whitespace-nowrap">
+                                  <div className="flex items-center space-x-1.5">
+                                    <div className="w-5.5 h-5.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full flex items-center justify-center font-bold text-[10px]">
+                                      {c.agentName.charAt(0)}
+                                    </div>
+                                    <span className="font-medium">{c.agentName}</span>
                                   </div>
-                                  <span className="font-medium">{c.agentName}</span>
-                                </div>
-                              </td>
+                                </td>
+                              )}
                               <td className="px-6 py-4 text-slate-400">
                                 <div className="flex flex-col space-y-0.5">
                                   <span className="font-medium text-slate-200 flex items-center">
@@ -1583,13 +1724,13 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
         <ConsumerDetailModal
           isOpen={!!selectedConsumer}
           consumer={selectedConsumer}
-          userRole="admin"
+          userRole={user.role}
           onClose={() => setSelectedConsumer(null)}
-          onUpdateStatus={handleUpdateStatusAndRemark}
-          onEdit={(consumer) => {
+          onUpdateStatus={user.role !== 'view_only_admin' ? handleUpdateStatusAndRemark : undefined}
+          onEdit={user.role !== 'view_only_admin' ? (consumer) => {
             setEditingConsumer(consumer);
             setIsFormOpen(true);
-          }}
+          } : undefined}
         />
       )}
 
@@ -1978,6 +2119,143 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     </>
                   ) : (
                     'Confirm Delete Agent'
+                  )}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Create New Admin Modal (Main Admin only) */}
+      {isCreateAdminModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden p-6 relative"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <h3 className="font-extrabold text-white text-lg">Create Admin User</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsCreateAdminModalOpen(false);
+                  setCreateAdminErr('');
+                  setCreateAdminSuccess('');
+                }}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAdmin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Admin Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="E.g., Mirza Admin"
+                  value={newAdminName}
+                  onChange={(e) => setNewAdminName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Admin Email (ends with @admin.solar)</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="mirza@admin.solar"
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Admin Role</label>
+                <select
+                  value={newAdminRole}
+                  onChange={(e) => setNewAdminRole(e.target.value as 'admin' | 'view_only_admin')}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white"
+                >
+                  <option value="view_only_admin">View-Only Admin (Cannot edit / hide agent names)</option>
+                  <option value="admin">Full Admin (Full edit permissions / see agent names)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">New Admin Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="Set password (min 6 chars)"
+                  value={newAdminPassword}
+                  onChange={(e) => setNewAdminPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650"
+                />
+              </div>
+
+              <div className="border-t border-slate-850 pt-4 mt-4">
+                <label className="block text-xs font-extrabold text-amber-400 uppercase tracking-wider mb-1.5">
+                  Confirm Main Admin Password (Mrigangka's)
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Enter your admin password to authorize"
+                  value={confirmMainAdminPassword}
+                  onChange={(e) => setConfirmMainAdminPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-amber-500/20 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 text-white placeholder:text-slate-650"
+                />
+              </div>
+
+              {createAdminErr && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold p-3 rounded-xl flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{createAdminErr}</span>
+                </div>
+              )}
+
+              {createAdminSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold p-3 rounded-xl flex items-center space-x-2 animate-pulse">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{createAdminSuccess}</span>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateAdminModalOpen(false);
+                    setCreateAdminErr('');
+                    setCreateAdminSuccess('');
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createAdminLoading}
+                  className="px-4 py-2 text-xs font-bold text-slate-900 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 disabled:text-slate-500 rounded-xl transition-all cursor-pointer flex items-center"
+                >
+                  {createAdminLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin mr-1.5" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Admin'
                   )}
                 </button>
               </div>

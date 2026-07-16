@@ -50,7 +50,7 @@ export default function App() {
     return <LandingPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  if (currentUser.role === 'admin') {
+  if (currentUser.role === 'admin' || currentUser.role === 'view_only_admin') {
     return <AdminDashboard user={currentUser} onLogout={handleLogout} />;
   }
 

@@ -195,7 +195,7 @@ export default function ConsumerDetailModal({
                 <h3 className="font-bold text-lg text-slate-800">{consumer.name}</h3>
                 {getStatusBadge(consumer.status)}
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">Consumer ID: <span className="font-mono font-semibold">{consumer.consumerId}</span> • Submitted by {consumer.agentName}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Consumer ID: <span className="font-mono font-semibold">{consumer.consumerId}</span>{userRole !== 'view_only_admin' && ` • Submitted by ${consumer.agentName}`}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">

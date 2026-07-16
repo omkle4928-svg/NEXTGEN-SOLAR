@@ -28,10 +28,11 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
 
     try {
       if (isAdminMode) {
-        // Pre-seeded Admin Login (updated to mrigangka@admin.solar per request)
         const cleanEmail = email.trim().toLowerCase();
+        const hashedInput = await hashPassword(password);
+
+        // 1. Check for pre-seeded main admin (mrigangka@admin.solar)
         if (cleanEmail === 'mrigangka@admin.solar') {
-          // Fetch updated admin settings if any
           let adminPassword = 'IF_tL8a!t@U$tWa';
           try {
             const adminDocRef = doc(db, 'admin_settings', 'profile');
@@ -43,9 +44,7 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
             console.warn('Failed to load updated admin settings, using default', e);
           }
 
-          // Check if stored password is a hash (64-character hex string)
           const isStoredHash = /^[0-9a-f]{64}$/i.test(adminPassword);
-          const hashedInput = await hashPassword(password);
           const isMatch = isStoredHash 
             ? hashedInput === adminPassword 
             : password === adminPassword;
@@ -53,18 +52,60 @@ export default function LandingPage({ onLoginSuccess }: LandingPageProps) {
           if (isMatch) {
             const adminUser: User = {
               id: 'admin-1',
-              name: 'Solar Admin',
+              name: 'Mrigangka (Admin)',
               email: cleanEmail,
               role: 'admin',
               createdAt: new Date().toISOString()
             };
             onLoginSuccess(adminUser);
-          } else {
-            setError('Invalid administrator email or password.');
+            return;
           }
-        } else {
-          setError('Invalid administrator email or password.');
         }
+
+        // 2. Check for pre-seeded view-only admin (mirza@admin.solar)
+        if (cleanEmail === 'mirza@admin.solar') {
+          if (password === 'Mirza@12' || hashedInput === '47458f2da67ae967a5b3a3222da8db380ea029cc46e9fb3eb8f6687029cb256b') { // Mirza@12 SHA256
+            const adminUser: User = {
+              id: 'admin-mirza',
+              name: 'Mirza (View Only)',
+              email: cleanEmail,
+              role: 'view_only_admin',
+              createdAt: new Date().toISOString()
+            };
+            onLoginSuccess(adminUser);
+            return;
+          }
+        }
+
+        // 3. Check for any created administrators in Firestore
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('email', '==', cleanEmail));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          const docSnap = querySnapshot.docs[0];
+          const userData = docSnap.data();
+          if (userData.role === 'admin' || userData.role === 'view_only_admin') {
+            const isStoredHash = /^[0-9a-f]{64}$/i.test(userData.password);
+            const isMatch = isStoredHash 
+              ? hashedInput === userData.password 
+              : password === userData.password;
+
+            if (isMatch) {
+              const adminUser: User = {
+                id: docSnap.id,
+                name: userData.name,
+                email: cleanEmail,
+                role: userData.role as any,
+                createdAt: userData.createdAt || new Date().toISOString()
+              };
+              onLoginSuccess(adminUser);
+              return;
+            }
+          }
+        }
+
+        setError('Invalid administrator email or password.');
       } else {
         // Agent Login from Firestore using contact number
         const cleanPhone = contactNumber.trim();
