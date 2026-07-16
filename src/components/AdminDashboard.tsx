@@ -30,7 +30,8 @@ import {
   AlertCircle,
   Plus,
   Trash2,
-  UserPlus
+  UserPlus,
+  Edit
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -67,6 +68,14 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [createAgentSuccess, setCreateAgentSuccess] = useState('');
   const [createAgentErr, setCreateAgentErr] = useState('');
   const [createAgentLoading, setCreateAgentLoading] = useState(false);
+
+  // Agent Editing state variables (mrigangka@admin.solar only)
+  const [editingAgent, setEditingAgent] = useState<any | null>(null);
+  const [editedAgentName, setEditedAgentName] = useState('');
+  const [editedAgentContact, setEditedAgentContact] = useState('');
+  const [editAgentSuccess, setEditAgentSuccess] = useState('');
+  const [editAgentErr, setEditAgentErr] = useState('');
+  const [editAgentLoading, setEditAgentLoading] = useState(false);
 
   // Fill Lead on Behalf state variables
   const [onBehalfAgent, setOnBehalfAgent] = useState<any | null>(null);
@@ -416,6 +425,82 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       setCreateAgentErr('Failed to create agent. Please try again.');
     } finally {
       setCreateAgentLoading(false);
+    }
+  };
+
+  const handleEditAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (user.email !== 'mrigangka@admin.solar') return;
+
+    setEditAgentErr('');
+    setEditAgentSuccess('');
+
+    if (!editedAgentName.trim() || !editedAgentContact.trim()) {
+      setEditAgentErr('All fields are required.');
+      return;
+    }
+
+    const cleanPhone = editedAgentContact.trim().replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      setEditAgentErr('Mobile number must be exactly 10 digits.');
+      return;
+    }
+
+    setEditAgentLoading(true);
+
+    try {
+      // Check if contactNumber already exists on OTHER users
+      const usersRef = collection(db, 'users');
+      const phoneQuery = query(usersRef, where('contactNumber', '==', cleanPhone));
+      const phoneSnap = await getDocs(phoneQuery);
+
+      const duplicate = phoneSnap.docs.find(doc => doc.id !== editingAgent.id);
+      if (duplicate) {
+        setEditAgentErr('This mobile number is already registered to another agent.');
+        setEditAgentLoading(false);
+        return;
+      }
+
+      // Update user document
+      const agentDocRef = doc(db, 'users', editingAgent.id);
+      await updateDoc(agentDocRef, {
+        name: editedAgentName.trim(),
+        contactNumber: cleanPhone
+      });
+
+      // Update any consumer documents submitted by this agent
+      const consumersRef = collection(db, 'consumers');
+      const qConsumers = query(consumersRef, where('agentId', '==', editingAgent.id));
+      const consumersSnap = await getDocs(qConsumers);
+
+      const batchPromises = consumersSnap.docs.map(async (consumerDoc) => {
+        await updateDoc(doc(db, 'consumers', consumerDoc.id), {
+          agentName: editedAgentName.trim()
+        });
+      });
+      await Promise.all(batchPromises);
+
+      setEditAgentSuccess('Agent details updated successfully!');
+
+      // Update local state
+      setAgents((prev) =>
+        prev.map((a) => a.id === editingAgent.id ? { ...a, name: editedAgentName.trim(), contactNumber: cleanPhone } : a)
+      );
+      setConsumers((prev) =>
+        prev.map((c) => c.agentId === editingAgent.id ? { ...c, agentName: editedAgentName.trim() } : c)
+      );
+
+      fetchAgents(); // Refresh from DB
+
+      setTimeout(() => {
+        setEditingAgent(null);
+        setEditAgentSuccess('');
+      }, 2000);
+    } catch (err) {
+      console.error('Error editing agent:', err);
+      setEditAgentErr('Failed to update agent. Please try again.');
+    } finally {
+      setEditAgentLoading(false);
     }
   };
 
@@ -1687,6 +1772,21 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                                 <Plus className="w-3.5 h-3.5" />
                                 <span>Fill on Behalf</span>
                               </button>
+                              {user.email === 'mrigangka@admin.solar' && (
+                                <button
+                                  onClick={() => {
+                                    setEditingAgent(agent);
+                                    setEditedAgentName(agent.name || '');
+                                    setEditedAgentContact(agent.contactNumber || '');
+                                    setEditAgentErr('');
+                                    setEditAgentSuccess('');
+                                  }}
+                                  className="px-3.5 py-2 text-[10px] font-bold text-indigo-400 hover:text-white bg-indigo-500/5 hover:bg-indigo-950 hover:border-indigo-800/50 border border-indigo-500/10 rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center"
+                                  title="Edit Agent Partner"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   setAgentToDelete(agent);
@@ -2281,6 +2381,104 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     </>
                   ) : (
                     'Create Admin'
+                  )}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Edit Agent Modal (Main Admin only) */}
+      {editingAgent && user.email === 'mrigangka@admin.solar' && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden p-6 relative"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl">
+                  <Edit className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-white text-md">Edit Agent Details</h3>
+                  {editingAgent.agentIdCode && (
+                    <span className="text-[10px] text-indigo-400 font-mono font-bold block mt-0.5">
+                      ID: {editingAgent.agentIdCode}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button 
+                onClick={() => setEditingAgent(null)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditAgent} className="space-y-4">
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Agent Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Rajesh Kumar"
+                  value={editedAgentName}
+                  onChange={(e) => setEditedAgentName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">10-Digit Mobile Number</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={10}
+                  placeholder="9876543210"
+                  value={editedAgentContact}
+                  onChange={(e) => setEditedAgentContact(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder:text-slate-650 font-mono"
+                />
+              </div>
+
+              {editAgentErr && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold p-3 rounded-xl flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{editAgentErr}</span>
+                </div>
+              )}
+
+              {editAgentSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold p-3 rounded-xl flex items-center space-x-2 animate-pulse">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{editAgentSuccess}</span>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingAgent(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editAgentLoading}
+                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-800 disabled:text-slate-500 rounded-xl transition-all cursor-pointer flex items-center"
+                >
+                  {editAgentLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
                   )}
                 </button>
               </div>
